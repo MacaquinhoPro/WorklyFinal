@@ -1,10 +1,20 @@
 // app/login.tsx
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
+import {
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+  Linking,
+  View,
+} from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "./utils/firebaseconfig";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 
 const getFriendlyError = (error: any): string => {
   switch (error.code) {
@@ -15,9 +25,9 @@ const getFriendlyError = (error: any): string => {
     case "auth/wrong-password":
       return "La contraseña es incorrecta.";
     case "auth/too-many-requests":
-      return "Demasiados intentos fallidos. Por favor, inténtalo de nuevo más tarde.";
+      return "Demasiados intentos fallidos. Por favor inténtalo más tarde.";
     default:
-      return "Error al iniciar sesión. Por favor, inténtalo de nuevo.";
+      return "Error al iniciar sesión. Inténtalo de nuevo.";
   }
 };
 
@@ -28,9 +38,7 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
 
   const handleLogin = async () => {
-    if (Platform.OS !== "macos" && Platform.OS !== "windows") {
-   }
-
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setError("");
     if (!email.trim() || !password) {
       setError("Por favor completa todos los campos.");
@@ -46,80 +54,177 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Iniciar Sesión</Text>
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      <TextInput
-        style={styles.input}
-        placeholder="Correo electrónico"
-        placeholderTextColor="#888"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Contraseña"
-        placeholderTextColor="#888"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
-      <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Entrar</Text>
-      </TouchableOpacity>
+    <LinearGradient
+      colors={["#5A40EA", "#EE805F"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.container}
+    >
+      <View style={styles.main}>
+        <View style={styles.logoContainer}>
+          <MaterialCommunityIcons name="briefcase-outline" size={48} color="#fff" />
+          <Text style={styles.logoText}>Workly</Text>
+        </View>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-      <TouchableOpacity onPress={() => router.push("/register")}>
-        <Text style={styles.registerText}>¿No tienes cuenta? Regístrate</Text>
-      </TouchableOpacity>
-    </View>
+        {/* Campos de correo y contraseña */}
+        <TextInput
+          style={styles.input}
+          placeholder="Correo electrónico"
+          placeholderTextColor="rgba(255,255,255,0.7)"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Contraseña"
+          placeholderTextColor="rgba(255,255,255,0.7)"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
+
+        {/* Botón “Entrar” */}
+        <TouchableOpacity
+          style={styles.loginButton}
+          onPress={handleLogin}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.buttonText}>Entrar</Text>
+        </TouchableOpacity>
+
+        {/* Botón “Create account” */}
+        <TouchableOpacity
+          style={[styles.loginButton, styles.createButton]}
+          onPress={() => {
+            Haptics.selectionAsync();
+            router.push("/register");
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.buttonText}>Create account</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.footer}>
+        {/* Texto de términos */}
+        <Text style={styles.disclaimer}>
+          Al tocar “Entrar” aceptas nuestros{" "}
+          <Text style={styles.linkText} onPress={() => Linking.openURL("#")}>
+            Términos
+          </Text>
+          . Aprende cómo procesamos tus datos en nuestra{" "}
+          <Text style={styles.linkText} onPress={() => Linking.openURL("#")}>
+            Política de Privacidad
+          </Text>{" "}
+          y{" "}
+          <Text style={styles.linkText} onPress={() => Linking.openURL("#")}>
+            Cookies Policy
+          </Text>
+          .
+        </Text>
+
+        {/* Link “¿Problemas iniciando sesión?” */}
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.selectionAsync();
+            router.push("/help");
+          }}
+        >
+          <Text style={styles.troubleText}>¿Problemas iniciando sesión?</Text>
+        </TouchableOpacity>
+      </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      justifyContent: "center",
-      alignItems: "center",
-      padding: 16,
-      backgroundColor: "#fff",
-    },
-    header: {
-      fontSize: 24,
-      marginBottom: 24,
-      color: "#000",
-    },
-    input: {
-      width: "80%",
-      borderWidth: 1,
-      borderRadius: 8,
-      padding: 12,
-      marginBottom: 16,
-      color: "#000",
-      borderColor: "#000",
-    },
-    loginButton: {
-      width: "80%",
-      backgroundColor: "rgb(247, 194, 88)", 
-      borderRadius: 8,
-      alignItems: "center",
-      marginBottom: 12,
-    },
-    buttonText: {
-      color: "#fff", 
-      fontSize: 16,
-    },
-    registerText: {
-      fontSize: 16,
-      color: "#000",
-      marginTop: 12,
-    },
-    errorText: {
-      color: "#ff4d4d",
-      fontSize: 14,
-      marginBottom: 16,
-      textAlign: "center",
-    },
-  });
-  
+  container: {
+    flex: 1,
+    padding: 24,
+    justifyContent: "space-between",
+  },
+  main: {
+    marginTop: 180,
+  },
+  footer: {
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  header: {
+    fontSize: 32,
+    color: "#fff",
+    fontWeight: "700",
+    marginBottom: 32,
+    textAlign: "center",
+  },
+  input: {
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.7)",
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+    color: "#fff",
+    fontSize: 16,
+  },
+  loginButton: {
+    width: "100%",
+    paddingVertical: 14,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "#fff",
+    backgroundColor: "transparent",
+    alignItems: "center",
+    marginTop: 16,
+  },
+  createButton: {
+    marginTop: 16, // separa del enlace de “¿Problemas…?”
+  },
+  buttonText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  disclaimer: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.7)",
+    textAlign: "center",
+    marginTop: 16,
+    marginHorizontal: 8,
+    lineHeight: 18,
+  },
+  linkText: {
+    textDecorationLine: "underline",
+  },
+  troubleText: {
+    fontSize: 14,
+    color: "#fff",
+    textDecorationLine: "underline",
+    textAlign: "center",
+    marginTop: 8,
+  },
+  errorText: {
+    color: "#ffdddd",
+    backgroundColor: "rgba(255,0,0,0.3)",
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  logoContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 32,
+  },
+  logoText: {
+    color: "#fff",
+    fontSize: 28,
+    fontWeight: "600",
+    marginTop: 8,
+  },
+});
