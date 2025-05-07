@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Dimensions, Alert, ActivityIndicator } from 're
 import Swiper from 'react-native-deck-swiper';
 import { collection, onSnapshot, addDoc, doc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../utils/firebaseconfig';
-import { router } from 'expo-router';
+import { router } from 'expo-router';     
 
 type Job = {
   id: string;
