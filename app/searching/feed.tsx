@@ -35,6 +35,9 @@ export default function Feed() {
       userId: auth.currentUser!.uid,
       status: 'pending',
       createdAt: Date.now(),
+      tittle : job.title,
+      description: job.description,
+      name: name,
     });
     Alert.alert('Aplicado', `Te postulaste a ${job.title}`);
   };

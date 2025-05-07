@@ -45,7 +45,10 @@ export default function MyJobs() {
     const qs = await getDocs(
       query(collection(db, 'applications'), where('jobId', '==', job.id))
     );
-    const array: Applicant[] = qs.docs.map((d) => d.data() as any);
+    const array: Applicant[] = qs.docs.map((d) => {
+      const data = d.data();
+      return { userId: data.userId, status: data.status };
+    });
     setApplicants(array);
     setLoadingApplicants(false);
   };
