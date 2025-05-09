@@ -1,6 +1,6 @@
+import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
 
 export default function SearchingTabs() {
   return (
@@ -10,7 +10,7 @@ export default function SearchingTabs() {
         options={{
           title: 'Explorar',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="flame-outline" color={color} size={size} />
+            <Ionicons name="briefcase-outline" color={color} size={size} />
           ),
         }}
       />
@@ -33,9 +33,18 @@ export default function SearchingTabs() {
         }}
       />
       <Tabs.Screen
+        name="ia"
+        options={{
+          title: 'IA',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="bulb-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="logout"
         options={{
-          title: "Cerrar Sesión",
+          title: 'Cerrar Sesión',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="exit-outline" color={color} size={size} />
           ),
