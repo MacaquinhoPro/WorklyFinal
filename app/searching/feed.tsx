@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   Alert,
   ActivityIndicator,
   TouchableOpacity,
-  Platform,
   ImageBackground,
 } from 'react-native';
 import Swiper from 'react-native-deck-swiper';
@@ -18,7 +17,8 @@ import {
   onSnapshot,
   setDoc,
   doc,
-  getDoc,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db, auth } from '../utils/firebaseconfig';
 
@@ -36,29 +36,46 @@ type Job = {
 };
 
 export default function Feed() {
-  const [cards, setCards] = useState<Job[]>([]);
+  /* ---------- estado ---------- */
+  const [jobsRaw, setJobsRaw] = useState<Job[]>([]);
+  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const swiperRef = useRef<any>(null);
 
-  /* ───── escuchar ofertas ─────────────────────────── */
+  /* ---------- stream de trabajos ---------- */
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'jobs'), (snap) => {
       const arr = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-      setCards(arr);
+      setJobsRaw(arr);
       setLoading(false);
     });
     return () => unsub();
   }, []);
 
-  /* ───── postularse ───────────────────────────────── */
+  /* ---------- stream de aplicaciones del usuario ---------- */
+  useEffect(() => {
+    const q = query(
+      collection(db, 'applications'),
+      where('userId', '==', auth.currentUser!.uid)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const ids = new Set<string>();
+      snap.docs.forEach((d) => ids.add(d.data().jobId));
+      setAppliedIds(ids);
+    });
+    return () => unsub();
+  }, []);
+
+  /* ---------- vista filtrada ---------- */
+  const cards = useMemo(
+    () => jobsRaw.filter((j) => !appliedIds.has(j.id)),
+    [jobsRaw, appliedIds]
+  );
+
+  /* ---------- postularse ---------- */
   const apply = async (job: Job) => {
     try {
       const appId = `${job.id}_${auth.currentUser!.uid}`;
-
-      // datos del usuario
-      const userSnap = await getDoc(doc(db, 'users', auth.currentUser!.uid));
-      const uData: any = userSnap.exists() ? userSnap.data() : {};
-
       await setDoc(doc(db, 'applications', appId), {
         jobId: job.id,
         userId: auth.currentUser!.uid,
@@ -66,28 +83,22 @@ export default function Feed() {
         createdAt: Date.now(),
         title: job.title,
         description: job.description,
-
-        // ─── datos de postulante ───
-        name: uData.displayName || auth.currentUser!.displayName || '',
-        email: uData.email || auth.currentUser!.email || '',
-        photoURL: uData.photoURL || auth.currentUser!.photoURL || '',
-        descriptionUser: uData.description || '',
-        resumeURL: uData.resumeURL || '',
       });
-
       Alert.alert('¡Listo!', `Te postulaste a ${job.title}`);
+      // elimina de UI inmediatamente
+      swiperRef.current?.swipeRight(); // para la animación
     } catch (e: any) {
       Alert.alert('Error', e.message);
     }
   };
 
-  /* ───── rechazar ─────────────────────────────────── */
+  /* ---------- rechazar ---------- */
   const reject = (job: Job) => {
     Alert.alert('Oferta descartada', `Descartaste ${job.title}`);
-    setCards((prev) => prev.filter((c) => c.id !== job.id));
+    swiperRef.current?.swipeLeft();
   };
 
-  /* ───── loading / vacío ──────────────────────────── */
+  /* ---------- loading / vacío ---------- */
   if (loading)
     return (
       <View style={s.center}>
@@ -99,13 +110,13 @@ export default function Feed() {
     return (
       <View style={[s.container, s.center]}>
         <Text style={s.finalText}>
-          Vuelve más tarde para descubrir nuevas oportunidades.
+          No hay más ofertas nuevas por ahora. ¡Vuelve más tarde!
         </Text>
       </View>
     );
   }
 
-  /* ───── UI ───────────────────────────────────────── */
+  /* ---------- UI ---------- */
   return (
     <View style={s.container}>
       <Swiper
@@ -152,7 +163,7 @@ export default function Feed() {
   );
 }
 
-/* ───── tarjeta individual ─────────────────────────── */
+/* ---------- tarjeta individual ---------- */
 function Card({
   job,
   onSwipeLeft,
@@ -216,14 +227,11 @@ function Card({
   );
 }
 
-/* ───── estilos ─────────────────────────────────────── */
+/* ---------- estilos ---------- */
 const { width, height } = Dimensions.get('window');
 
 const s = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f2f2f2',
-  },
+  container: { flex: 1, backgroundColor: '#f2f2f2' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   finalText: {
     fontSize: 18,
@@ -232,17 +240,13 @@ const s = StyleSheet.create({
     paddingHorizontal: 32,
   },
 
-  /* CARD */
   cardWrapper: {
     width: width - 40,
     height: height * 0.75,
     alignSelf: 'center',
     marginTop: 20,
   },
-  card: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
+  card: { flex: 1, justifyContent: 'flex-end' },
   cardImage: { flex: 1 },
   gradient: { ...StyleSheet.absoluteFillObject },
   infoBtn: { position: 'absolute', top: 16, right: 16 },
