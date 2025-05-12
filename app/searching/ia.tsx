@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
   TouchableOpacity,
@@ -12,17 +11,17 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Markdown from 'react-native-markdown-display';   // ← NUEVO
 
-const GEMINI_API_KEY = 'AIzaSyCm6KBxmAH62LOkJVvzvvTU8UAfsAAK728';
-const GEMINI_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
-
+/* ---------- tipos ---------- */
 type Message = {
-  id: string;
-  text: string;
-  sender: 'user' | 'ai';
+  text: string;                          // admite Markdown
+  sender_by: 'User' | 'Bot';
+  date: Date;
+  state: 'sent' | 'recived';
 };
 
+/* ---------- componente ---------- */
 export default function IAChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -30,64 +29,103 @@ export default function IAChatScreen() {
   const flatListRef = useRef<FlatList<Message>>(null);
   const insets = useSafeAreaInsets();
 
+  /* ---------- envía mensaje ---------- */
   const handleSend = async () => {
-    const text = input.trim();
-    if (!text) return;
+    const originalPrompt = input.trim();
+    if (!originalPrompt) return;
 
-    const userMsg: Message = { id: Date.now().toString(), text, sender: 'user' };
-    setMessages(prev => [...prev, userMsg]);
+    const userMessage: Message = {
+      text: originalPrompt,
+      sender_by: 'User',
+      date: new Date(),
+      state: 'sent',
+    };
+    setMessages(prev => [...prev, userMessage]);
     setInput('');
-    setIsLoading(true);
 
     try {
-      const response = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+      setIsLoading(true);
+
+      const promptferxxo = `Respondeme como si fueras un coach laboral, que únicamente responde preguntas acerca de trabajo. Si preguntan algo que no tenga relación, responde: "Soy una IA diseñada para ayudarte con preguntas laborales, no puedo responder a tu pregunta".\n\n${originalPrompt}`;
+      const endpoint =
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyC3CGhhZXZ1TwFNK6aCb4xlg0ARfgBv96Q';
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text }] }] }),
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptferxxo }] }],
+        }),
       });
+
       const data = await response.json();
-      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'Lo siento, no obtuve respuesta.';
-      const aiMsg: Message = { id: (Date.now() + 1).toString(), text: aiText, sender: 'ai' };
-      setMessages(prev => [...prev, aiMsg]);
+      const botText =
+        data?.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No response';
+
+      const botMessage: Message = {
+        text: botText,
+        sender_by: 'Bot',
+        date: new Date(),
+        state: 'recived',
+      };
+      setMessages(prev => [...prev, botMessage]);
     } catch {
-      const errMsg: Message = { id: (Date.now() + 2).toString(), text: 'Error de red. Intenta de nuevo.', sender: 'ai' };
-      setMessages(prev => [...prev, errMsg]);
+      const errorMsg: Message = {
+        text: 'Error de red. Intenta de nuevo.',
+        sender_by: 'Bot',
+        date: new Date(),
+        state: 'recived',
+      };
+      setMessages(prev => [...prev, errorMsg]);
     } finally {
       setIsLoading(false);
     }
   };
 
+  /* ---------- auto-scroll ---------- */
   useEffect(() => {
     flatListRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
 
+  /* ---------- render ---------- */
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        // Desplaza el teclado considerando el notch/dinamic island
         keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
       >
         <FlatList
           ref={flatListRef}
           data={messages}
-          keyExtractor={item => item.id}
+          keyExtractor={(_, i) => i.toString()}
           contentContainerStyle={[styles.chatContainer, { paddingTop: 8 }]}
           renderItem={({ item }) => (
             <View
               style={[
                 styles.bubble,
-                item.sender === 'user' ? styles.userBubble : styles.aiBubble,
+                item.sender_by === 'User' ? styles.userBubble : styles.aiBubble,
               ]}
             >
-              <Text style={item.sender === 'user' ? styles.userText : styles.aiText}>
+              <Markdown
+                style={item.sender_by === 'User' ? mdStylesUser : mdStylesAI}
+              >
                 {item.text}
-              </Text>
+              </Markdown>
             </View>
           )}
         />
 
+        {/* -------- cartel de bienvenida -------- */}
+        {messages.length === 0 && (
+          <View style={styles.welcomeOverlay} pointerEvents="none">
+            <Markdown style={mdStylesAI}>
+              Bienvenido, soy una IA para ayudarte a organizar tus ideas
+            </Markdown>
+          </View>
+        )}
+
+        {/* -------- barra de entrada -------- */}
         <View style={styles.inputRow}>
           <TextInput
             style={styles.input}
@@ -113,6 +151,7 @@ export default function IAChatScreen() {
   );
 }
 
+/* ---------- estilos ---------- */
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -138,12 +177,6 @@ const styles = StyleSheet.create({
   aiBubble: {
     alignSelf: 'flex-start',
     backgroundColor: '#E0E0E0',
-  },
-  userText: {
-    color: '#FFF',
-  },
-  aiText: {
-    color: '#333',
   },
   inputRow: {
     flexDirection: 'row',
@@ -174,4 +207,24 @@ const styles = StyleSheet.create({
   sendBtnDisabled: {
     opacity: 0.6,
   },
+  welcomeOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 60,
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });
+
+/* ---------- estilos de Markdown ---------- */
+const mdStylesUser = {
+  body: { color: '#FFF' },
+  strong: { fontWeight: 'bold', color: '#FFF' },
+} as const;
+
+const mdStylesAI = {
+  body: { color: '#333' },
+  strong: { fontWeight: 'bold', color: '#333' },
+} as const;
