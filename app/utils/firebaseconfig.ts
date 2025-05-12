@@ -7,7 +7,7 @@ const firebaseConfig = {
   apiKey:            'AIzaSyCyJ09wZm8Dd_PAnLGhculO-5utkCVZGEA',
   authDomain:        'workly-9872e.firebaseapp.com',
   projectId:         'workly-9872e',
-  storageBucket:     'workly-9872e.appspot.com',      // ← ojo: termina en .com
+  storageBucket:     'workly-9872e.firebasestorage.app',      
   messagingSenderId: '452351847078',
   appId:             '1:452351847078:web:6814f148110c2f792fe267',
   measurementId:     'G-YY7KZDWX29',
