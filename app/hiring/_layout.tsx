@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 
 export default function HiringLayout() {
   return (
@@ -13,7 +13,7 @@ export default function HiringLayout() {
         options={{
           title: 'Mis Puestos',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="briefcase-outline" color={color} size={size} />
+            <Feather name="briefcase" color={color} size={size} />
           ),
         }}
       />
