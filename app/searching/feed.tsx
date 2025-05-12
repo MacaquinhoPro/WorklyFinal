@@ -13,14 +13,20 @@ import {
 import Swiper from 'react-native-deck-swiper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { collection, onSnapshot, setDoc, doc } from 'firebase/firestore';
+import {
+  collection,
+  onSnapshot,
+  setDoc,
+  doc,
+  getDoc,
+} from 'firebase/firestore';
 import { db, auth } from '../utils/firebaseconfig';
 
 const ICONS = ['rewind', 'close', 'star-outline', 'heart', 'flash'];
 
 type Job = {
   id: string;
-  imageUrl: string;       // Asegúrate de añadir este campo en Firestore
+  imageUrl: string;
   title: string;
   description: string;
   pay: string;
@@ -34,69 +40,111 @@ export default function Feed() {
   const [loading, setLoading] = useState(true);
   const swiperRef = useRef<any>(null);
 
+  /* ───── escuchar ofertas ─────────────────────────── */
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'jobs'), snap => {
-      const arr = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+    const unsub = onSnapshot(collection(db, 'jobs'), (snap) => {
+      const arr = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
       setCards(arr);
       setLoading(false);
     });
     return () => unsub();
   }, []);
 
+  /* ───── postularse ───────────────────────────────── */
   const apply = async (job: Job) => {
-    const id = `${job.id}_${auth.currentUser!.uid}`;
-    await setDoc(doc(db, 'applications', id), {
-      jobId: job.id,
-      userId: auth.currentUser!.uid,
-      status: 'pending',
-      createdAt: Date.now(),
-      title: job.title,
-      description: job.description,
-    });
-    Alert.alert('¡Listo!', `Te postulaste a ${job.title}`);
+    try {
+      const appId = `${job.id}_${auth.currentUser!.uid}`;
+
+      // datos del usuario
+      const userSnap = await getDoc(doc(db, 'users', auth.currentUser!.uid));
+      const uData: any = userSnap.exists() ? userSnap.data() : {};
+
+      await setDoc(doc(db, 'applications', appId), {
+        jobId: job.id,
+        userId: auth.currentUser!.uid,
+        status: 'pending',
+        createdAt: Date.now(),
+        title: job.title,
+        description: job.description,
+
+        // ─── datos de postulante ───
+        name: uData.displayName || auth.currentUser!.displayName || '',
+        email: uData.email || auth.currentUser!.email || '',
+        photoURL: uData.photoURL || auth.currentUser!.photoURL || '',
+        descriptionUser: uData.description || '',
+        resumeURL: uData.resumeURL || '',
+      });
+
+      Alert.alert('¡Listo!', `Te postulaste a ${job.title}`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
   };
 
+  /* ───── rechazar ─────────────────────────────────── */
   const reject = (job: Job) => {
     Alert.alert('Oferta descartada', `Descartaste ${job.title}`);
-    setCards(prev => prev.filter(c => c.id !== job.id));
+    setCards((prev) => prev.filter((c) => c.id !== job.id));
   };
 
-  if (loading) return <View style={s.center}><ActivityIndicator size="large" /></View>;
-if (!cards.length) {
-  return (
-    <View style={[s.container, s.center]}>
-      <Text style={s.finalText}>
-        Vuelve más tarde para descubrir nuevas oportunidades.
-      </Text>
-    </View>
-  );
-}
+  /* ───── loading / vacío ──────────────────────────── */
+  if (loading)
+    return (
+      <View style={s.center}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
 
+  if (!cards.length) {
+    return (
+      <View style={[s.container, s.center]}>
+        <Text style={s.finalText}>
+          Vuelve más tarde para descubrir nuevas oportunidades.
+        </Text>
+      </View>
+    );
+  }
+
+  /* ───── UI ───────────────────────────────────────── */
   return (
     <View style={s.container}>
       <Swiper
         ref={swiperRef}
         cards={cards}
-        renderCard={job => (
+        renderCard={(job) => (
           <Card
             job={job}
             onSwipeLeft={() => swiperRef.current?.swipeLeft()}
             onSwipeRight={() => swiperRef.current?.swipeRight()}
           />
         )}
-        onSwipedRight={i => apply(cards[i])}
-        onSwipedLeft={i => reject(cards[i])}
+        onSwipedRight={(i) => apply(cards[i])}
+        onSwipedLeft={(i) => reject(cards[i])}
         backgroundColor="transparent"
         stackSize={3}
         stackSeparation={15}
         overlayLabels={{
           left: {
             title: 'NOPE',
-            style: { label: { color: '#FF5B5B', fontSize: 32, borderWidth: 2, borderColor: '#FF5B5B' } }
+            style: {
+              label: {
+                color: '#FF5B5B',
+                fontSize: 32,
+                borderWidth: 2,
+                borderColor: '#FF5B5B',
+              },
+            },
           },
           right: {
             title: 'LIKE',
-            style: { label: { color: '#4EFF82', fontSize: 32, borderWidth: 2, borderColor: '#4EFF82' } }
+            style: {
+              label: {
+                color: '#4EFF82',
+                fontSize: 32,
+                borderWidth: 2,
+                borderColor: '#4EFF82',
+              },
+            },
           },
         }}
       />
@@ -104,7 +152,16 @@ if (!cards.length) {
   );
 }
 
-function Card({ job, onSwipeLeft, onSwipeRight }: { job: Job; onSwipeLeft: () => void; onSwipeRight: () => void }) {
+/* ───── tarjeta individual ─────────────────────────── */
+function Card({
+  job,
+  onSwipeLeft,
+  onSwipeRight,
+}: {
+  job: Job;
+  onSwipeLeft: () => void;
+  onSwipeRight: () => void;
+}) {
   return (
     <View style={s.cardWrapper}>
       <ImageBackground
@@ -113,26 +170,32 @@ function Card({ job, onSwipeLeft, onSwipeRight }: { job: Job; onSwipeLeft: () =>
         imageStyle={s.cardImage}
       >
         <LinearGradient
-          colors={["transparent", "rgba(0,0,0,0.8)"]}
+          colors={['transparent', 'rgba(0,0,0,0.8)']}
           style={s.gradient}
         />
         <View style={s.actionsOverlay}>
           {ICONS.map((icon, idx) => {
             const handler =
-              icon === 'heart' ? onSwipeRight :
-              icon === 'close' ? onSwipeLeft :
-              () => {};
+              icon === 'heart'
+                ? onSwipeRight
+                : icon === 'close'
+                ? onSwipeLeft
+                : () => {};
             return (
               <TouchableOpacity key={idx} style={s.btnSmall} onPress={handler}>
                 <MaterialCommunityIcons
                   name={icon as any}
                   size={28}
                   color={
-                    icon === 'rewind' ? '#F5B642' :
-                    icon === 'close' ? '#FF5B5B' :
-                    icon === 'star-outline' ? '#4D8EFF' :
-                    icon === 'heart' ? '#4EFF82' :
-                    '#C766FF'
+                    icon === 'rewind'
+                      ? '#F5B642'
+                      : icon === 'close'
+                      ? '#FF5B5B'
+                      : icon === 'star-outline'
+                      ? '#4D8EFF'
+                      : icon === 'heart'
+                      ? '#4EFF82'
+                      : '#C766FF'
                   }
                 />
               </TouchableOpacity>
@@ -144,13 +207,16 @@ function Card({ job, onSwipeLeft, onSwipeRight }: { job: Job; onSwipeLeft: () =>
         </TouchableOpacity>
         <View style={s.details}>
           <Text style={s.name}>{job.title}</Text>
-          <Text style={s.sub}>{job.pay} • {job.duration}</Text>
+          <Text style={s.sub}>
+            {job.pay} • {job.duration}
+          </Text>
         </View>
       </ImageBackground>
     </View>
   );
 }
 
+/* ───── estilos ─────────────────────────────────────── */
 const { width, height } = Dimensions.get('window');
 
 const s = StyleSheet.create({
@@ -166,7 +232,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 32,
   },
 
-  /* CARD smaller card */
+  /* CARD */
   cardWrapper: {
     width: width - 40,
     height: height * 0.75,
@@ -177,30 +243,12 @@ const s = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
   },
-  cardImage: {
-    flex: 1,
-  },
-  gradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  infoBtn: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-  },
-  details: {
-    padding: 20,
-  },
-  name: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  sub: {
-    color: '#ddd',
-    fontSize: 16,
-    marginTop: 4,
-  },
+  cardImage: { flex: 1 },
+  gradient: { ...StyleSheet.absoluteFillObject },
+  infoBtn: { position: 'absolute', top: 16, right: 16 },
+  details: { padding: 20 },
+  name: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
+  sub: { color: '#ddd', fontSize: 16, marginTop: 4 },
 
   actionsOverlay: {
     position: 'absolute',
