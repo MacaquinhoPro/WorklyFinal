@@ -9,7 +9,7 @@ import {
   Linking,
   View,
 } from "react-native";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "./utils/firebaseconfig";
@@ -62,7 +62,7 @@ export default function LoginScreen() {
     >
       <View style={styles.main}>
         <View style={styles.logoContainer}>
-          <MaterialCommunityIcons name="briefcase-outline" size={48} color="#fff" />
+          <Feather name="briefcase" size={48} color="#fff" />
           <Text style={styles.logoText}>Workly</Text>
         </View>
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
