@@ -15,6 +15,10 @@ import {
   StyleProp,
   TextStyle,
 } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { getStatusBarHeight } from 'react-native-iphone-x-helper';
 import { db, auth } from '../utils/firebaseconfig';
 import {
   collection,
@@ -25,6 +29,7 @@ import {
   deleteDoc,
   getDocs,
   updateDoc,
+  getDoc,
 } from 'firebase/firestore';
 import { router } from 'expo-router';
 
@@ -34,6 +39,9 @@ type Job = {
   title: string;
   pay: string;
   duration: string;
+  requirements: string[];
+  latitude?: number;
+  longitude?: number;
 };
 
 type Applicant = {
@@ -76,7 +84,12 @@ export default function MyJobs() {
 
   /* ───── cargar postulantes ────────────────────────── */
   const openJob = async (job: Job) => {
-    setSelectedJob(job);
+    const jobSnapFull = await getDoc(doc(db, 'jobs', job.id));
+    let fullData: any = {};
+    if (jobSnapFull.exists()) {
+      fullData = jobSnapFull.data();
+    }
+    setSelectedJob({ ...job, ...fullData });
     setSelectedApplicant(null);
     setLoadingApplicants(true);
 
@@ -153,17 +166,43 @@ export default function MyJobs() {
 
   /* ───── UI principal ─────────────────────────────── */
   return (
-    <View style={{ flex: 1, padding: 16 }}>
+    <SafeAreaView style={s.container}>
       <FlatList data={jobs} keyExtractor={(j) => j.id} renderItem={renderJob} />
 
       {/* ─── modal puesto y postulantes ───────────────── */}
       <Modal visible={selectedJob != null} animationType="slide">
-        <View style={{ flex: 1, padding: 20 }}>
-          <Button title="Cerrar" onPress={() => setSelectedJob(null)} />
-
+        <SafeAreaView style={s.modalContainer}>
+          <TouchableOpacity style={s.backButton} onPress={() => setSelectedJob(null)}>
+            <Ionicons name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          <View style={s.modalContent}>
           {selectedJob && (
             <>
               <Text style={s.modalTitle}>{selectedJob.title}</Text>
+              <Text style={s.detailText}>Salario: {selectedJob.pay}</Text>
+              <Text style={s.detailText}>Duración: {selectedJob.duration}</Text>
+              <View style={s.detailList}>
+                <Text style={s.detailText}>Requisitos:</Text>
+                {selectedJob.requirements.map((req, i) => (
+                  <Text key={i} style={s.detailText}>• {req}</Text>
+                ))}
+              </View>
+              <MapView
+                style={s.detailMap}
+                initialRegion={{
+                  latitude: selectedJob.latitude ?? 4.7110,
+                  longitude: selectedJob.longitude ?? -74.0721,
+                  latitudeDelta: 0.05,
+                  longitudeDelta: 0.05,
+                }}
+              >
+                <Marker
+                  coordinate={{
+                    latitude: selectedJob.latitude ?? 4.7110,
+                    longitude: selectedJob.longitude ?? -74.0721,
+                  }}
+                />
+              </MapView>
 
               {loadingApplicants ? (
                 <ActivityIndicator size="large" />
@@ -236,34 +275,88 @@ export default function MyJobs() {
               )}
             </>
           )}
-        </View>
+          </View>
+        </SafeAreaView>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
 /* ───── estilos ─────────────────────────────────────── */
 const s = StyleSheet.create({
+  container: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: getStatusBarHeight(true),
+    backgroundColor: '#f5f5f5',
+  },
+  modalContainer: {
+    flex: 1,
+    paddingHorizontal: 0,
+    paddingTop: getStatusBarHeight(true) + 8,
+    backgroundColor: '#f0f2f5',
+  },
+  modalContent: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    marginTop: 80,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    // iOS shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    // Android elevation
+    elevation: 4,
+  },
+  backButton: {
+    position: 'absolute',
+    top: getStatusBarHeight(true) + 32,
+    left: 16,
+    padding: 8,
+    zIndex: 10,
+  },
   card: {
-    backgroundColor: '#fff',
-    padding: 14,
-    borderRadius: 8,
-    marginBottom: 10,
-    elevation: 2,
+    backgroundColor: '#ffffff',
+    padding: 20,
+    borderRadius: 12,
+    marginVertical: 8,
+    // iOS shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    // Android elevation
+    elevation: 3,
   },
   title: { fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
   row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  modalTitle: { fontSize: 22, fontWeight: 'bold', marginVertical: 10 },
+  modalTitle: { 
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
 
   /* lista postulantes */
   appItem: {
+    backgroundColor: '#ffffff',
+    padding: 16,
+    borderRadius: 12,
+    marginVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    // iOS shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    // Android elevation
+    elevation: 2,
   },
-  appName: { flex: 1, fontSize: 16 },
+  appName: { flex: 1, fontSize: 16, fontWeight: '500' },
   appemail: { fontSize: 14, color: '#666' },
   appExp: { width: 110, fontSize: 14, color: '#666' },
 
@@ -283,9 +376,20 @@ const s = StyleSheet.create({
   },
   detailText: {
     fontSize: 16,
-    textAlign: 'center',
+    color: '#444',
     marginBottom: 8,
-    paddingHorizontal: 8,
+    width: '100%',
+    textAlign: 'left',
+  },
+  detailList: {
+    width: '100%',
+    marginBottom: 12,
+  },
+  detailMap: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    marginBottom: 16,
   },
   detailButtons: {
     flexDirection: 'row',
@@ -302,6 +406,7 @@ const badgeStyle = (status: string): StyleProp<TextStyle> => ({
   overflow: 'hidden',
   color: '#fff',
   fontSize: 12,
+  marginLeft: 12,
   backgroundColor:
     status === 'waiting'
       ? '#ffa726'

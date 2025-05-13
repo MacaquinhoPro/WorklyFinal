@@ -1,15 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { getStatusBarHeight } from 'react-native-iphone-x-helper';
 import {
   View,
   TextInput,
-  Button,
   Text,
   StyleSheet,
-  ScrollView,
   Alert,
-  TouchableOpacity,
   Image,
 } from 'react-native';
+import { TouchableOpacity, Platform } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -25,6 +26,10 @@ import { db, auth, storage } from '../utils/firebaseconfig';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import { Dimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import MapView, { Marker } from 'react-native-maps';
+import * as Location from 'expo-location';
 
 interface Form {
   title: string;
@@ -35,27 +40,133 @@ interface Form {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#fff' },
+  container: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: getStatusBarHeight(true),
+    backgroundColor: '#ffffff',
+  },
+  content: {
+    paddingVertical: 16,
+  },
   input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 12,
-    marginVertical: 8,
-    borderRadius: 4,
+    width: '100%',
+    height: 60,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    marginVertical: 16,
+    // iOS shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    // Android elevation
+    elevation: 3,
+  },
+  inputMultiline: {
+    height: 200,
+    textAlignVertical: 'top',
+  },
+  button: {
+    alignSelf: 'center',
+    width: '80%',
+    marginVertical: 24,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  buttonGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   err: { color: 'red', marginBottom: 8 },
   imgBtn: {
-    height: 180,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 6,
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    marginVertical: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 8,
-    overflow: 'hidden',
+    // iOS shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    // Android elevation
+    elevation: 3,
   },
-  imgPreview: { width: '100%', height: '100%' },
+  imgPreview: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
+  },
   imgText: { color: '#555' },
+  removeBtn: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    // iOS shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    // Android elevation
+    elevation: 2,
+  },
+  stepIndicator: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginVertical: 12,
+  },
+  stepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginHorizontal: 6,
+  },
+  stepDotActive: {
+    backgroundColor: '#5A40EA',
+  },
+  stepDotInactive: {
+    backgroundColor: '#ccc',
+  },
+  navButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 24,
+  },
+  navButtonsCenter: {
+    justifyContent: 'center',
+  },
+  navText: {
+    fontSize: 16,
+    color: '#5A40EA',
+    fontWeight: '600',
+  },
+  stepContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  navTextDisabled: {
+    color: '#ccc',
+  },
 });
 
 const schema = z.object({
@@ -70,11 +181,15 @@ export default function Publish() {
   const { jobId } = useLocalSearchParams<{ jobId?: string }>();
   const isEdit = Boolean(jobId);
 
+  const [step, setStep] = useState(0);
+  const totalSteps = 5;
+
   const {
     control,
     handleSubmit,
     formState: { errors, isSubmitting },
     reset,
+    watch,
   } = useForm<Form>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -85,9 +200,32 @@ export default function Publish() {
       requirements: '',
     },
   });
-
+  
+  const title = watch('title');
+  const description = watch('description');
+  const pay = watch('pay');
+  const duration = watch('duration');
+  const requirements = watch('requirements');
+  
   /* ---------- imagen ---------- */
   const [imageUri, setImageUri] = React.useState<string>('');
+  
+  const [region, setRegion] = useState({
+    latitude: 4.7110,
+    longitude: -74.0721,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  });
+  const [marker, setMarker] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  const canGoNext = (() => {
+    if (step === 0) return !!imageUri;
+    if (step === 1) return !!title && !!description && !errors.title && !errors.description;
+    if (step === 2) return !!pay && !!duration && !errors.pay && !errors.duration;
+    if (step === 3) return !!requirements && !errors.requirements;
+    if (step === 4) return marker !== null;
+    return false;
+  })();
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -119,6 +257,15 @@ export default function Publish() {
           requirements: d.requirements.join(', '),
         });
         setImageUri(d.imageUrl || '');
+        if (d.latitude && d.longitude) {
+          setMarker({ latitude: d.latitude, longitude: d.longitude });
+          setRegion({
+            latitude: d.latitude,
+            longitude: d.longitude,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          });
+        }
       }
     })();
   }, []);
@@ -148,6 +295,8 @@ export default function Publish() {
         duration: data.duration,
         requirements: data.requirements.split(',').map((t) => t.trim()),
         imageUrl: photoURL, // <- clave utilizada por searching/feed
+        latitude: marker!.latitude,
+        longitude: marker!.longitude,
         createdAt: serverTimestamp(),
       };
 
@@ -178,12 +327,12 @@ export default function Publish() {
         name={name}
         render={({ field: { value, onChange, onBlur } }) => (
           <TextInput
-            style={[
-              styles.input,
-              multiline && { height: 100, textAlignVertical: 'top' },
-            ]}
+            style={[styles.input, multiline && styles.inputMultiline]}
             placeholder={placeholder}
+            placeholderTextColor="#999"
             multiline={multiline}
+            keyboardType="default"
+            blurOnSubmit={false}
             value={value}
             onChangeText={onChange}
             onBlur={onBlur}
@@ -198,27 +347,117 @@ export default function Publish() {
 
   /* ---------- UI ---------- */
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* Imagen */}
-      <TouchableOpacity style={styles.imgBtn} onPress={pickImage}>
-        {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.imgPreview} />
-        ) : (
-          <Text style={styles.imgText}>Publica foto</Text>
+    <SafeAreaView style={styles.container}>
+      {/* Step indicator */}
+      <View style={styles.stepIndicator}>
+        {[...Array(totalSteps)].map((_, i) => (
+          <View
+            key={i}
+            style={[
+              styles.stepDot,
+              i === step ? styles.stepDotActive : styles.stepDotInactive,
+            ]}
+          />
+        ))}
+      </View>
+      <View style={styles.stepContainer}>
+        {step === 0 && (
+          // Step 1: Image picker
+          <TouchableOpacity style={styles.imgBtn} onPress={pickImage}>
+            {imageUri ? (
+              <>
+                <Image source={{ uri: imageUri }} style={styles.imgPreview} />
+                <TouchableOpacity
+                  style={styles.removeBtn}
+                  onPress={() => setImageUri('')}
+                >
+                  <Ionicons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={styles.imgText}>Publica foto</Text>
+            )}
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
-
-      <Field name="title" placeholder="Título del puesto" />
-      <Field name="description" placeholder="Descripción" multiline />
-      <Field name="pay" placeholder="Pago / salario" />
-      <Field name="duration" placeholder="Duración (p.ej. tiempo completo)" />
-      <Field name="requirements" placeholder="Requisitos (separados por coma)" />
-
-      <Button
-        title={isEdit ? 'Guardar cambios' : 'Publicar'}
-        onPress={handleSubmit(onSubmit)}
-        disabled={isSubmitting}
-      />
-    </ScrollView>
+        {step === 1 && (
+          // Step 2: Title & Description
+          <>
+            <Field name="title" placeholder="Título del puesto" />
+            <Field name="description" placeholder="Descripción" multiline />
+          </>
+        )}
+        {step === 2 && (
+          // Step 3: Pay & Duration
+          <>
+            <Field name="pay" placeholder="Pago / salario" />
+            <Field
+              name="duration"
+              placeholder="Duración (p.ej. tiempo completo)"
+            />
+          </>
+        )}
+        {step === 3 && (
+          // Step 4: Requirements & Submit
+          <>
+            <Field
+              name="requirements"
+              placeholder="Requisitos (separados por coma)"
+            />
+          </>
+        )}
+        {step === 4 && (
+          // Step 5: Location picker
+          <>
+            <MapView
+              style={{ width: '100%', flex: 1, borderRadius: 16 }}
+              initialRegion={region}
+              onPress={(e) => {
+                const { latitude, longitude } = e.nativeEvent.coordinate;
+                setMarker({ latitude, longitude });
+              }}
+              onRegionChangeComplete={(r) => setRegion(r)}
+            >
+              {marker && <Marker coordinate={marker} />}
+            </MapView>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={handleSubmit(onSubmit)}
+              disabled={!marker || isSubmitting}
+            >
+              <LinearGradient
+                colors={['#5A40EA', '#EE805F']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.buttonGradient}
+              >
+                <Text style={styles.buttonText}>
+                  {isEdit ? 'Guardar cambios' : 'Publicar'}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+      <View style={[styles.navButtons, step === 0 && styles.navButtonsCenter]}>
+        {step > 0 && (
+          <TouchableOpacity onPress={() => setStep(step - 1)}>
+            <Text style={styles.navText}>Anterior</Text>
+          </TouchableOpacity>
+        )}
+        {step < totalSteps - 1 && (
+          <TouchableOpacity
+            onPress={() => canGoNext && setStep(step + 1)}
+            disabled={!canGoNext}
+          >
+            <Text style={[
+              styles.navText,
+              !canGoNext && styles.navTextDisabled
+            ]}>
+              Siguiente
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }

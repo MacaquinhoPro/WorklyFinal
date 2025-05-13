@@ -3,7 +3,7 @@ import {
   SafeAreaView, ScrollView, View, Text, Image, TouchableOpacity,
   StyleSheet, Dimensions, Platform, TextInput, Modal, Alert,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { auth, db, storage } from '../utils/firebaseconfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -127,7 +127,7 @@ export default function ProfileScreen() {
 
       <ScrollView contentContainerStyle={s.container}>
         <View style={s.brandRow}>
-          <MaterialCommunityIcons name="briefcase-outline" size={24} color="#000" />
+          <Feather name="briefcase" size={24} color="#000" />
           <Text style={s.brandText}>Workly</Text>
         </View>
 

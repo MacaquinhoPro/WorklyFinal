@@ -13,7 +13,7 @@ import {
   Modal,
   Alert,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { auth, db, storage } from '../utils/firebaseconfig';
@@ -143,8 +143,15 @@ export default function CompanyProfile() {
               <TouchableOpacity onPress={() => setEditing(false)} style={s.cancelButton}>
                 <Text style={s.cancelText}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleSave} style={s.saveButton}>
-                <Text style={s.saveText}>Guardar</Text>
+              <TouchableOpacity style={s.saveButton} onPress={handleSave}>
+                <LinearGradient
+                  colors={['#5A40EA', '#EE805F']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={s.saveGradient}
+                >
+                  <Text style={s.saveText}>Guardar</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
           </View>
@@ -154,14 +161,21 @@ export default function CompanyProfile() {
       <ScrollView contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
         {/* header */}
         <View style={s.brandRow}>
-          <MaterialCommunityIcons name="briefcase-outline" size={24} color="#000" />
+          <Feather name="briefcase" size={24} color="#000" />
           <Text style={s.brandText}>Workly</Text>
         </View>
 
         {/* avatar */}
-        <TouchableOpacity style={s.avatarWrapper} onPress={changePhoto}>
-          <Image source={{ uri: photoURL }} style={s.avatar} />
-        </TouchableOpacity>
+        <LinearGradient
+          colors={['#5A40EA', '#EE805F']}
+          style={s.avatarWrapper}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+        >
+          <TouchableOpacity style={s.avatarInner} onPress={changePhoto}>
+            <Image source={{ uri: photoURL }} style={s.avatar} />
+          </TouchableOpacity>
+        </LinearGradient>
 
         {/* nombre y descripción */}
         <Text style={s.name}>{companyName}</Text>
@@ -181,7 +195,7 @@ export default function CompanyProfile() {
         {/* tarjeta premium opcional */}
         <View style={s.platinumCard}>
           <LinearGradient colors={['#FFF', '#F7F7F7']} style={s.platinumBg} />
-          <MaterialCommunityIcons name="briefcase-outline" size={24} color="#000" />
+          <Feather name="briefcase" size={24} color="#000" />
           <Text style={s.platinumTitle}>Workly Platinum</Text>
           <Text style={s.platinumSubtitle}>Level up every action you take on Workly</Text>
           <View style={s.pagination}>
@@ -212,11 +226,16 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    padding: 4,
+    borderRadius: (AVATAR_SIZE + 16) / 2 + 4,
+  },
+  avatarInner: {
     width: AVATAR_SIZE + 16,
     height: AVATAR_SIZE + 16,
     borderRadius: (AVATAR_SIZE + 16) / 2,
-    borderWidth: 4,
-    borderColor: '#5A40EA',
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatar: { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 },
   name: { fontSize: 22, fontWeight: '600', marginBottom: 24, color: '#333' },
@@ -252,15 +271,36 @@ const s = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12, textAlign: 'center' },
   modalLabel: { fontSize: 14, color: '#666', marginTop: 8 },
   modalInput: { borderWidth: 1, borderColor: '#DDD', borderRadius: 8, padding: 8, marginTop: 4 },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 },
-  cancelButton: { paddingHorizontal: 12, paddingVertical: 8 },
-  cancelText: { color: '#666', fontSize: 14 },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  cancelButton: {
+    paddingHorizontal: 16,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  cancelText: {
+    color: '#666',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   saveButton: {
-    backgroundColor: '#5A40EA',
+    overflow: 'hidden',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 6,
     marginLeft: 8,
+  },
+  saveGradient: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
   },
   saveText: { color: '#FFF', fontSize: 14 },
   /* premium card */
