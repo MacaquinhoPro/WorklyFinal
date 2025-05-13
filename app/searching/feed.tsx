@@ -8,7 +8,9 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   ImageBackground,
+  Modal,
 } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
 import Swiper from 'react-native-deck-swiper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,7 +24,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../utils/firebaseconfig';
 
-const ICONS = ['rewind', 'close', 'star-outline', 'heart', 'flash'];
+const ICONS = ['rewind', 'close', 'star-outline', 'heart', 'map'];
 
 type Job = {
   id: string;
@@ -33,6 +35,8 @@ type Job = {
   duration: string;
   requirements: string[];
   ownerUid: string;
+  latitude?: number;
+  longitude?: number;
 };
 
 export default function Feed() {
@@ -41,6 +45,14 @@ export default function Feed() {
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const swiperRef = useRef<any>(null);
+  const [mapJob, setMapJob] = useState<Job | null>(null);
+
+  const defaultRegion = {
+    latitude: 4.7110,
+    longitude: -74.0721,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  };
 
   /* ---------- stream de trabajos ---------- */
   useEffect(() => {
@@ -86,7 +98,7 @@ export default function Feed() {
       });
       Alert.alert('¡Listo!', `Te postulaste a ${job.title}`);
       // elimina de UI inmediatamente
-      swiperRef.current?.swipeRight(); // para la animación
+      // swiperRef.current?.swipeRight(); // para la animación
     } catch (e: any) {
       Alert.alert('Error', e.message);
     }
@@ -95,7 +107,7 @@ export default function Feed() {
   /* ---------- rechazar ---------- */
   const reject = (job: Job) => {
     Alert.alert('Oferta descartada', `Descartaste ${job.title}`);
-    swiperRef.current?.swipeLeft();
+    // swiperRef.current?.swipeLeft();
   };
 
   /* ---------- loading / vacío ---------- */
@@ -127,10 +139,15 @@ export default function Feed() {
             job={job}
             onSwipeLeft={() => swiperRef.current?.swipeLeft()}
             onSwipeRight={() => swiperRef.current?.swipeRight()}
+            onMapPress={() => setMapJob(job)}
           />
         )}
         onSwipedRight={(i) => apply(cards[i])}
         onSwipedLeft={(i) => reject(cards[i])}
+        disableLeftSwipe={!!mapJob}
+        disableRightSwipe={!!mapJob}
+        disableTopSwipe={!!mapJob}
+        disableBottomSwipe={!!mapJob}
         backgroundColor="transparent"
         stackSize={3}
         stackSeparation={15}
@@ -159,6 +176,37 @@ export default function Feed() {
           },
         }}
       />
+      {mapJob && (
+        <Modal transparent animationType="slide" visible onRequestClose={() => setMapJob(null)}>
+          <View style={s.modalOverlay}>
+            <View style={s.mapContainer}>
+              <MapView
+                style={StyleSheet.absoluteFill}
+                initialRegion={
+                  mapJob.latitude && mapJob.longitude
+                    ? {
+                        latitude: mapJob.latitude,
+                        longitude: mapJob.longitude,
+                        latitudeDelta: 0.05,
+                        longitudeDelta: 0.05,
+                      }
+                    : defaultRegion
+                }
+              >
+                <Marker
+                  coordinate={{
+                    latitude: mapJob.latitude || defaultRegion.latitude,
+                    longitude: mapJob.longitude || defaultRegion.longitude,
+                  }}
+                />
+              </MapView>
+              <TouchableOpacity style={s.mapClose} onPress={() => setMapJob(null)}>
+                <MaterialCommunityIcons name="close-circle" size={36} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -168,10 +216,12 @@ function Card({
   job,
   onSwipeLeft,
   onSwipeRight,
+  onMapPress,
 }: {
   job: Job;
   onSwipeLeft: () => void;
   onSwipeRight: () => void;
+  onMapPress: () => void;
 }) {
   return (
     <View style={s.cardWrapper}>
@@ -191,6 +241,8 @@ function Card({
                 ? onSwipeRight
                 : icon === 'close'
                 ? onSwipeLeft
+                : icon === 'map'
+                ? onMapPress
                 : () => {};
             return (
               <TouchableOpacity key={idx} style={s.btnSmall} onPress={handler}>
@@ -270,5 +322,26 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 2,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapContainer: {
+    width: width - 40,
+    height: height * 0.6,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  mapClose: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 18,
+    padding: 4,
   },
 });
