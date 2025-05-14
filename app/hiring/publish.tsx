@@ -1,39 +1,39 @@
-import React, { useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { getStatusBarHeight } from 'react-native-iphone-x-helper';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
+  SafeAreaView,
+  KeyboardAvoidingView,
+  ScrollView,
   View,
-  TextInput,
   Text,
-  StyleSheet,
-  Alert,
-  Image,
+  TextInput,
   TouchableOpacity,
+  StyleSheet,
   Platform,
-  Dimensions,
+  Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
+import { getStatusBarHeight } from 'react-native-iphone-x-helper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useForm, Controller } from 'react-hook-form';
-import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import {
-  doc,
-  addDoc,
-  updateDoc,
   collection,
-  serverTimestamp,
+  doc,
   getDoc,
   setDoc,
+  updateDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { db, auth, storage } from '../utils/firebaseconfig';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import MapView, { Marker } from 'react-native-maps';
-import * as Location from 'expo-location';
+import MapView, { Marker, Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 
-interface Form {
+interface FormData {
   title: string;
   description: string;
   pay: string;
@@ -42,19 +42,19 @@ interface Form {
 }
 
 const schema = z.object({
-  title: z.string().min(1, 'Title is required'),
-  description: z.string().min(1, 'Description is required'),
-  pay: z.string().min(1, 'Pay is required'),
-  duration: z.string().min(1, 'Duration is required'),
-  requirements: z.string().min(1, 'Requirements are required'),
+  title: z.string().min(1, 'Required'),
+  description: z.string().min(1, 'Required'),
+  pay: z.string().min(1, 'Required'),
+  duration: z.string().min(1, 'Required'),
+  requirements: z.string().min(1, 'Required'),
 });
 
 export default function Publish() {
   const { jobId } = useLocalSearchParams<{ jobId?: string }>();
   const isEdit = Boolean(jobId);
 
-  const [step, setStep] = useState(0);
   const totalSteps = 5;
+  const [step, setStep] = useState(0);
 
   const {
     control,
@@ -62,7 +62,7 @@ export default function Publish() {
     formState: { errors, isSubmitting },
     reset,
     watch,
-  } = useForm<Form>({
+  } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       title: '',
@@ -71,6 +71,7 @@ export default function Publish() {
       duration: '',
       requirements: '',
     },
+    shouldUnregister: false,
   });
 
   const title = watch('title');
@@ -79,13 +80,15 @@ export default function Publish() {
   const duration = watch('duration');
   const requirements = watch('requirements');
 
-  const [imageUri, setImageUri] = useState<string>('');
-  const [region, setRegion] = useState({
+  const initialRegion: Region = {
     latitude: 4.711,
     longitude: -74.0721,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
-  });
+  };
+
+  const [imageUri, setImageUri] = useState<string>('');
+  const [region, setRegion] = useState<Region>(initialRegion);
   const [marker, setMarker] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const canGoNext = (() => {
@@ -100,345 +103,333 @@ export default function Publish() {
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permiso denegado', 'No se concedió acceso a la galería.');
+      Alert.alert('Permiso denegado', 'Necesitamos acceso a tu galería.');
       return;
     }
     const res = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: true,
       quality: 0.7,
     });
-    if (!res.canceled && res.assets?.length) {
+    if (!res.canceled && res.assets.length) {
       setImageUri(res.assets[0].uri);
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isEdit) return;
     (async () => {
       const snap = await getDoc(doc(db, 'jobs', jobId!));
       if (snap.exists()) {
-        const d: any = snap.data();
+        const data = snap.data() as any;
         reset({
-          title: d.title,
-          description: d.description,
-          pay: d.pay,
-          duration: d.duration,
-          requirements: d.requirements.join(', '),
+          title: data.title,
+          description: data.description,
+          pay: data.pay,
+          duration: data.duration,
+          requirements: data.requirements.join(', '),
         });
-        setImageUri(d.imageUrl || '');
-        if (d.latitude && d.longitude) {
-          setMarker({ latitude: d.latitude, longitude: d.longitude });
+        setImageUri(data.imageUrl || '');
+        if (data.latitude && data.longitude) {
+          setMarker({ latitude: data.latitude, longitude: data.longitude });
           setRegion({
-            latitude: d.latitude,
-            longitude: d.longitude,
+            latitude: data.latitude,
+            longitude: data.longitude,
             latitudeDelta: 0.05,
             longitudeDelta: 0.05,
           });
         }
       }
     })();
-  }, []);
+  }, [isEdit, jobId]);
 
-  const onSubmit = async (data: Form) => {
-    try {
-      let photoURL = imageUri;
-      if (imageUri && !imageUri.startsWith('http')) {
-        const fileRef = ref(
-          storage,
-          `jobImages/${auth.currentUser!.uid}_${Date.now()}.jpg`
-        );
-        const resp = await fetch(imageUri);
-        const blob = await resp.blob();
-        await uploadBytes(fileRef, blob);
-        photoURL = await getDownloadURL(fileRef);
+  const onSubmit = useCallback(
+    async (form: FormData) => {
+      try {
+        let photoURL = imageUri;
+        if (imageUri && !imageUri.startsWith('http')) {
+          const fileRef = ref(
+            storage,
+            `jobImages/${auth.currentUser!.uid}_${Date.now()}.jpg`
+          );
+          const blob = await (await fetch(imageUri)).blob();
+          await uploadBytes(fileRef, blob);
+          photoURL = await getDownloadURL(fileRef);
+        }
+
+        const payload = {
+          ownerUid: auth.currentUser!.uid,
+          title: form.title,
+          description: form.description,
+          pay: form.pay,
+          duration: form.duration,
+          requirements: form.requirements.split(',').map((t) => t.trim()),
+          imageUrl: photoURL,
+          latitude: marker!.latitude,
+          longitude: marker!.longitude,
+          createdAt: serverTimestamp(),
+        };
+
+        if (isEdit) {
+          await updateDoc(doc(db, 'jobs', jobId!), payload);
+          Alert.alert('¡Éxito!', 'Publicado actualizado');
+          router.replace('/hiring/myJobs');
+        } else {
+          const newRef = doc(collection(db, 'jobs'));
+          await setDoc(newRef, { ...payload, id: newRef.id });
+          Alert.alert('¡Éxito!', 'Publicado creado');
+
+          // Resetear todo para crear desde cero de nuevo
+          reset({
+            title: '',
+            description: '',
+            pay: '',
+            duration: '',
+            requirements: '',
+          });
+          setImageUri('');
+          setRegion(initialRegion);
+          setMarker(null);
+          setStep(0);
+        }
+      } catch (e: any) {
+        Alert.alert('Error', e.message);
       }
-
-      const payload = {
-        ownerUid: auth.currentUser!.uid,
-        title: data.title,
-        description: data.description,
-        pay: data.pay,
-        duration: data.duration,
-        requirements: data.requirements.split(',').map((t) => t.trim()),
-        imageUrl: photoURL,
-        latitude: marker!.latitude,
-        longitude: marker!.longitude,
-        createdAt: serverTimestamp(),
-      };
-
-      if (isEdit) {
-        await updateDoc(doc(db, 'jobs', jobId!), payload);
-      } else {
-        const newRef = doc(collection(db, 'jobs'));
-        await setDoc(newRef, { ...payload, id: newRef.id });
-      }
-
-      Alert.alert('Éxito', isEdit ? 'Puesto actualizado' : 'Puesto publicado');
-      router.replace('/hiring/myJobs');
-    } catch (e: any) {
-      Alert.alert('Error', e.message);
-    }
-  };
-
-  const Field = ({
-    name,
-    placeholder,
-    multiline = false,
-  }: {
-    name: keyof Form;
-    placeholder: string;
-    multiline?: boolean;
-  }) => (
-    <>
-      <Controller
-        control={control}
-        name={name}
-        render={({ field: { value, onChange, onBlur } }) => (
-          <TextInput
-            style={[styles.input, multiline && styles.inputMultiline]}
-            placeholder={placeholder}
-            placeholderTextColor="#999"
-            multiline={multiline}
-            keyboardType="default"
-            blurOnSubmit={false}
-            value={value}
-            onChangeText={onChange}
-            onBlur={onBlur}
-          />
-        )}
-      />
-      {errors[name] && (
-        <Text style={styles.err}>{errors[name]?.message as string}</Text>
-      )}
-    </>
+    },
+    [imageUri, marker, isEdit, jobId]
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.stepIndicator}>
-        {[...Array(totalSteps)].map((_, i) => (
-          <View
-            key={i}
-            style={[
-              styles.stepDot,
-              i === step ? styles.stepDotActive : styles.stepDotInactive,
-            ]}
-          />
-        ))}
-      </View>
-      <View style={styles.stepContainer}>
-        {step === 0 && (
-          <TouchableOpacity style={styles.imgBtn} onPress={pickImage}>
-            {imageUri ? (
-              <>
-                <Image source={{ uri: imageUri }} style={styles.imgPreview} />
-                <TouchableOpacity
-                  style={styles.removeBtn}
-                  onPress={() => setImageUri('')}
-                >
-                  <Ionicons name="close" size={24} color="#333" />
-                </TouchableOpacity>
-              </>
-            ) : (
-              <Text style={styles.imgText}>Publica foto</Text>
+    <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView
+        style={styles.flex1}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={getStatusBarHeight() + 10}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.stepIndicator}>
+            {Array.from({ length: totalSteps }).map((_, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.stepDot,
+                  i === step ? styles.stepDotActive : styles.stepDotInactive,
+                ]}
+              />
+            ))}
+          </View>
+
+          <View style={styles.stepContainer}>
+            {step === 0 && (
+              <TouchableOpacity style={styles.imgBtn} onPress={pickImage}>
+                {imageUri ? (
+                  <>
+                    <Image source={{ uri: imageUri }} style={styles.imgPreview} />
+                    <TouchableOpacity
+                      style={styles.removeBtn}
+                      onPress={() => setImageUri('')}
+                    >
+                      <Ionicons name="close-circle" size={24} color="#d32f2f" />
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <Text style={styles.imgText}>Toca para seleccionar foto</Text>
+                )}
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
-        )}
-        {step === 1 && (
-          <>
-            <Field name="title" placeholder="Título del puesto" />
-            <Field name="description" placeholder="Descripción" multiline />
-          </>
-        )}
-        {step === 2 && (
-          <>
-            <Field name="pay" placeholder="Pago / salario" />
-            <Field name="duration" placeholder="Duración (p.ej. tiempo completo)" />
-          </>
-        )}
-        {step === 3 && (
-          <>
-            <Field name="requirements" placeholder="Requisitos (separados por coma)" />
-          </>
-        )}
-        {step === 4 && (
-          <>
-            <MapView
-              style={{ width: '100%', flex: 1, borderRadius: 16 }}
-              initialRegion={region}
-              onPress={(e) => {
-                const { latitude, longitude } = e.nativeEvent.coordinate;
-                setMarker({ latitude, longitude });
-              }}
-              onRegionChangeComplete={(r) => setRegion(r)}
-            >
-              {marker && <Marker coordinate={marker} />}
-            </MapView>
+            {step === 1 && (
+              <>
+                <Controller
+                  control={control}
+                  name="title"
+                  render={({ field: { value, onChange } }) => (
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Título"
+                      value={value}
+                      onChangeText={onChange}
+                    />
+                  )}
+                />
+                {errors.title && <Text style={styles.error}>{errors.title.message}</Text>}
+                <Controller
+                  control={control}
+                  name="description"
+                  render={({ field: { value, onChange } }) => (
+                    <TextInput
+                      style={[styles.input, styles.textArea]}
+                      placeholder="Descripción"
+                      multiline
+                      value={value}
+                      onChangeText={onChange}
+                    />
+                  )}
+                />
+                {errors.description && <Text style={styles.error}>{errors.description.message}</Text>}
+              </>
+            )}
+            {step === 2 && (
+              <>
+                <Controller
+                  control={control}
+                  name="pay"
+                  render={({ field: { value, onChange } }) => (
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Salario"
+                      value={value}
+                      onChangeText={onChange}
+                    />
+                  )}
+                />
+                {errors.pay && <Text style={styles.error}>{errors.pay.message}</Text>}
+                <Controller
+                  control={control}
+                  name="duration"
+                  render={({ field: { value, onChange } }) => (
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Duración"
+                      value={value}
+                      onChangeText={onChange}
+                    />
+                  )}
+                />
+                {errors.duration && <Text style={styles.error}>{errors.duration.message}</Text>}
+              </>
+            )}
+            {step === 3 && (
+              <>
+                <Controller
+                  control={control}
+                  name="requirements"
+                  render={({ field: { value, onChange } }) => (
+                    <TextInput
+                      style={[styles.input, styles.textArea]}
+                      placeholder="Requisitos (separados por coma)"
+                      multiline
+                      value={value}
+                      onChangeText={onChange}
+                    />
+                  )}
+                />
+                {errors.requirements && <Text style={styles.error}>{errors.requirements.message}</Text>}
+              </>
+            )}
+            {step === 4 && (
+              <>
+                <Text style={{ marginBottom: 8, textAlign: 'center' }}>
+                  Toca el mapa para ubicar la oferta
+                </Text>
+                <MapView
+                  style={styles.map}
+                  region={region}
+                  onRegionChangeComplete={setRegion}
+                  onPress={(e) => setMarker(e.nativeEvent.coordinate)}
+                >
+                  {marker && (
+                    <Marker
+                      coordinate={marker}
+                      draggable
+                      onDragEnd={(e) => setMarker(e.nativeEvent.coordinate)}
+                    />
+                  )}
+                </MapView>
+              </>
+            )}
+          </View>
+        </ScrollView>
+
+        <View style={styles.navRow}>
+          {step > 0 && (
+            <TouchableOpacity onPress={() => setStep(step - 1)}>
+              <Text style={styles.navText}>Back</Text>
+            </TouchableOpacity>
+          )}
+          {step < totalSteps - 1 ? (
             <TouchableOpacity
-              style={styles.button}
+              onPress={() => canGoNext && setStep(step + 1)}
+              disabled={!canGoNext}
+            >
+              <Text style={[styles.navText, !canGoNext && styles.navDisabled]}>
+                Next
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
               onPress={handleSubmit(onSubmit)}
-              disabled={!marker || isSubmitting}
+              disabled={!canGoNext || isSubmitting}
+              style={styles.submitBtn}
             >
               <LinearGradient
-                colors={['#5A40EA', '#EE805F']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.buttonGradient}
+                colors={['#5A40EA', '#8A65F3']}
+                style={styles.submitGradient}
               >
-                <Text style={styles.buttonText}>
-                  {isEdit ? 'Guardar cambios' : 'Publicar'}
-                </Text>
+                {isSubmitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitText}>
+                    {isEdit ? 'Actualizar' : 'Publicar'}
+                  </Text>
+                )}
               </LinearGradient>
             </TouchableOpacity>
-          </>
-        )}
-      </View>
-      <View style={[styles.navButtons, step === 0 && styles.navButtonsCenter]}>
-        {step > 0 && (
-          <TouchableOpacity onPress={() => setStep(step - 1)}>
-            <Text style={styles.navText}>Anterior</Text>
-          </TouchableOpacity>
-        )}
-        {step < totalSteps - 1 && (
-          <TouchableOpacity
-            onPress={() => canGoNext && setStep(step + 1)}
-            disabled={!canGoNext}
-          >
-            <Text
-              style={[
-                styles.navText,
-                !canGoNext && styles.navTextDisabled,
-              ]}
-            >
-              Siguiente
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: getStatusBarHeight(true),
-    backgroundColor: '#ffffff',
-  },
-  content: {
-    paddingVertical: 16,
-  },
+  safe: { flex: 1, backgroundColor: '#fff' },
+  flex1: { flex: 1 },
+  scrollContainer: { flexGrow: 1, padding: 16 },
+  stepIndicator: { flexDirection: 'row', justifyContent: 'center', marginBottom: 12 },
+  stepDot: { width: 10, height: 10, borderRadius: 5, marginHorizontal: 6 },
+  stepDotActive: { backgroundColor: '#5A40EA' },
+  stepDotInactive: { backgroundColor: '#ccc' },
+  stepContainer: { flex: 1 },
   input: {
     width: '100%',
-    height: 60,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    marginVertical: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  inputMultiline: {
-    height: 200,
-    textAlignVertical: 'top',
-  },
-  button: {
-    alignSelf: 'center',
-    width: '80%',
-    marginVertical: 24,
+    backgroundColor: '#f5f5f5',
     borderRadius: 12,
-    overflow: 'hidden',
+    padding: 12,
+    marginVertical: 8,
   },
-  buttonGradient: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  err: { color: 'red', marginBottom: 8 },
+  textArea: { minHeight: 100, textAlignVertical: 'top' },
+  error: { color: '#d32f2f', marginLeft: 4 },
   imgBtn: {
     width: '100%',
     aspectRatio: 1,
-    borderRadius: 20,
-    backgroundColor: '#f5f5f5',
-    marginVertical: 16,
+    backgroundColor: '#eee',
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
+    marginVertical: 8,
   },
-  imgPreview: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 20,
-  },
+  imgPreview: { width: '100%', height: '100%', borderRadius: 12 },
   imgText: { color: '#555' },
   removeBtn: {
     position: 'absolute',
-    bottom: 10,
-    right: 10,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 2,
+    bottom: 8,
+    right: 8,
+    backgroundColor: '#fff',
+    padding: 4,
+    borderRadius: 12,
   },
-  stepIndicator: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginVertical: 12,
-  },
-  stepDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginHorizontal: 6,
-  },
-  stepDotActive: {
-    backgroundColor: '#5A40EA',
-  },
-  stepDotInactive: {
-    backgroundColor: '#ccc',
-  },
-  navButtons: {
+  map: { width: '100%', height: 200, borderRadius: 12, marginVertical: 8 },
+  submitBtn: { flex: 1, alignItems: 'flex-end' },
+  submitGradient: { padding: 12, borderRadius: 12 },
+  submitText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  navRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 24,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
-  navButtonsCenter: {
-    justifyContent: 'center',
-  },
-  navText: {
-    fontSize: 16,
-    color: '#5A40EA',
-    fontWeight: '600',
-  },
-  navTextDisabled: {
-    color: '#ccc',
-  },
-  stepContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-  },
+  navText: { fontSize: 16, color: '#5A40EA' },
+  navDisabled: { color: '#bbb' },
 });
