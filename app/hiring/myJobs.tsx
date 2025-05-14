@@ -38,6 +38,7 @@ import {
 type Job = {
   id: string;
   title: string;
+  description: string;      // <-- agregado
   pay: string;
   duration: string;
   requirements: string[];
@@ -81,7 +82,11 @@ export default function MyJobs() {
       where('ownerUid', '==', auth.currentUser!.uid)
     );
     const unsub = onSnapshot(q, snap => {
-      const arr = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Job[];
+      const arr = snap.docs.map(d => ({
+        id: d.id,
+        ...(d.data() as any),
+        description: (d.data() as any).description ?? '',
+      })) as Job[];
       setJobs(arr);
     });
     return () => unsub();
@@ -91,7 +96,13 @@ export default function MyJobs() {
   const openJob = async (job: Job) => {
     const snap = await getDoc(doc(db, 'jobs', job.id));
     let full = job;
-    if (snap.exists()) full = { ...job, ...(snap.data() as any) };
+    if (snap.exists()) {
+      full = {
+        ...job,
+        ...(snap.data() as any),
+        description: (snap.data() as any).description ?? job.description,
+      };
+    }
     setSelectedJob(full);
     setSelectedApplicant(null);
     setLoadingApplicants(true);
@@ -180,6 +191,7 @@ export default function MyJobs() {
       >
         <View style={s.cardOverlay}>
           <Text style={s.title}>{item.title}</Text>
+          <Text style={s.desc} numberOfLines={2}>{item.description}</Text>
           <Text style={s.subtitle}>{item.duration} • {item.pay}</Text>
           <View style={s.row}>
             <Button title="Editar" onPress={() => handleEdit(item)} />
@@ -216,6 +228,7 @@ export default function MyJobs() {
             {selectedJob && (
               <>
                 <Text style={s.modalTitle}>{selectedJob.title}</Text>
+                <Text style={s.detailDescription}>{selectedJob.description}</Text>
                 <Text style={s.detailText}>Salario: {selectedJob.pay}</Text>
                 <Text style={s.detailText}>Duración: {selectedJob.duration}</Text>
                 <View style={s.detailList}>
@@ -350,6 +363,7 @@ const s = StyleSheet.create({
     padding:12,
   },
   title:{ color:'#fff', fontSize:18, fontWeight:'bold' },
+  desc:{ color:'#eee', fontSize:14, marginBottom:4 },       // descripción en tarjeta
   subtitle:{ color:'#eee', fontSize:14, marginVertical:4 },
   row:{ flexDirection:'row', justifyContent:'space-between', marginTop:8 },
 
@@ -357,7 +371,8 @@ const s = StyleSheet.create({
   modalContainer:{ flex:1, backgroundColor:'#f0f2f5', paddingTop:getStatusBarHeight(true)+8 },
   backButton:{ position:'absolute', top:getStatusBarHeight(true)+32, left:16, padding:8, zIndex:10 },
   modalContent:{ flex:1, backgroundColor:'#fff', marginTop:80, borderTopLeftRadius:16, borderTopRightRadius:16, padding:16, elevation:4 },
-  modalTitle:{ fontSize:24, fontWeight:'700', marginBottom:16, textAlign:'center' },
+  modalTitle:{ fontSize:24, fontWeight:'700', marginBottom:8, textAlign:'center' },
+  detailDescription:{ fontSize:16, color:'#555', marginBottom:12, textAlign:'left' },  // descripción en modal
   detailText:{ fontSize:16, color:'#444', marginBottom:8 },
   detailList:{ marginBottom:12 },
   detailMap:{ width:'100%', height:200, borderRadius:12, marginBottom:16 },
