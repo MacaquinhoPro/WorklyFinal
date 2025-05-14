@@ -25,7 +25,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 type Role = 'searching' | 'hiring';
 
 const DEFAULT_AVATAR =
-  'https://firebasestorage.googleapis.com/v0/b/workly-9872e.appspot.com/o/avatars%2Funknown.jpg?alt=media';
+  'https://firebasestorage.googleapis.com/v0/b/workly-9872e.firebasestorage.app/o/avatars%2Funknown.jpg?alt=media&token=88357e30-4930-41bf-bdeb-5e280ace6883';
 
 export default function RegisterScreen() {
   const router = useRouter();

@@ -1,3 +1,4 @@
+// Feed.tsx
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View,
@@ -9,6 +10,8 @@ import {
   TouchableOpacity,
   ImageBackground,
   Modal,
+  ScrollView,
+  RefreshControl,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import Swiper from 'react-native-deck-swiper';
@@ -21,9 +24,10 @@ import {
   doc,
   query,
   where,
+  getDocs,
 } from 'firebase/firestore';
 import { db, auth } from '../utils/firebaseconfig';
-import { useLocalSearchParams } from 'expo-router';   // ← NUEVO
+import { useLocalSearchParams } from 'expo-router';
 
 const ICONS = ['rewind', 'close', 'star-outline', 'heart', 'map'];
 
@@ -41,13 +45,14 @@ type Job = {
 };
 
 export default function Feed() {
-  /* ---------- query param focus ---------- */
+  /* query param focus */
   const { focus } = useLocalSearchParams<{ focus?: string }>();
 
-  /* ---------- estado ---------- */
+  /* estados */
   const [jobsRaw, setJobsRaw] = useState<Job[]>([]);
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const swiperRef = useRef<any>(null);
   const [mapJob, setMapJob] = useState<Job | null>(null);
 
@@ -58,7 +63,7 @@ export default function Feed() {
     longitudeDelta: 0.05,
   };
 
-  /* ---------- stream de trabajos ---------- */
+  /* stream de trabajos */
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'jobs'), (snap) => {
       const arr = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
@@ -68,7 +73,7 @@ export default function Feed() {
     return () => unsub();
   }, []);
 
-  /* ---------- stream applications ---------- */
+  /* stream applications */
   useEffect(() => {
     const q = query(
       collection(db, 'applications'),
@@ -82,13 +87,12 @@ export default function Feed() {
     return () => unsub();
   }, []);
 
-  /* ---------- cards filtradas + foco ---------- */
+  /* filtrado y foco */
   const cards = useMemo(() => {
     const list = jobsRaw.filter((j) => !appliedIds.has(j.id));
     if (focus) {
       const idx = list.findIndex((j) => j.id === focus);
       if (idx > 0) {
-        // mueve la oferta enfocada al inicio
         const [target] = list.splice(idx, 1);
         list.unshift(target);
       }
@@ -96,54 +100,69 @@ export default function Feed() {
     return list;
   }, [jobsRaw, appliedIds, focus]);
 
-  /* ---------- postular ---------- */
-const apply = async (job: Job) => {
-  try {
-    const user = auth.currentUser!;
-    const name = user.displayName ?? 'Sin nombre';
-    const email = user.email ?? 'Sin correo';
-
-    const appId = `${job.id}_${user.uid}`;
-    await setDoc(doc(db, 'applications', appId), {
-      jobId: job.id,
-      userId: user.uid,
-      status: 'pending',
-      createdAt: Date.now(),
-      title: job.title,
-      description: job.description,
-      // nuevos campos
-      name,  
-      email,
-    });
-
-    Alert.alert('¡Listo!', `Te postulaste a ${job.title}`);
-  } catch (e: any) {
-    Alert.alert('Error', e.message);
-  }
-};
-
-
+  /* postular / descartar */
+  const apply = async (job: Job) => {
+    try {
+      const user = auth.currentUser!;
+      const appId = `${job.id}_${user.uid}`;
+      await setDoc(doc(db, 'applications', appId), {
+        jobId: job.id,
+        userId: user.uid,
+        status: 'pending',
+        createdAt: Date.now(),
+        title: job.title,
+        description: job.description,
+        name: user.displayName ?? 'Sin nombre',
+        email: user.email ?? 'Sin correo',
+      });
+      Alert.alert('¡Listo!', `Te postulaste a ${job.title}`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  };
   const reject = (job: Job) =>
     Alert.alert('Oferta descartada', `Descartaste ${job.title}`);
 
-  /* ---------- loading / vacío ---------- */
-  if (loading)
+  /* pull-to-refresh manual */
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const snap = await getDocs(collection(db, 'jobs'));
+      const arr = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      setJobsRaw(arr);
+    } catch (e: any) {
+      Alert.alert('Error al recargar', e.message);
+    }
+    setRefreshing(false);
+  };
+
+  /* loading */
+  if (loading) {
     return (
       <View style={s.center}>
         <ActivityIndicator size="large" />
       </View>
     );
+  }
 
-  if (!cards.length)
+  /* sin cards: mostrar pull-to-refresh */
+  if (!cards.length) {
     return (
-      <View style={[s.container, s.center]}>
+      <ScrollView
+        style={s.container}
+        contentContainerStyle={s.center}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         <Text style={s.finalText}>
-          No hay más ofertas nuevas por ahora. ¡Vuelve más tarde!
+          ¡Ya no hay más trabajos disponibles!
         </Text>
-      </View>
+      </ScrollView>
     );
+  }
 
-  /* ---------- UI ---------- */
+  /* UI principal con Swiper */
   return (
     <View style={s.container}>
       <Swiper
@@ -192,7 +211,7 @@ const apply = async (job: Job) => {
         }}
       />
 
-      {/* ---------- modal mapa ---------- */}
+      {/* modal mapa */}
       {mapJob && (
         <Modal
           transparent
@@ -240,7 +259,7 @@ const apply = async (job: Job) => {
   );
 }
 
-/* ---------- componente Card sin cambios ---------- */
+/* Card subcomponente */
 function Card({
   job,
   onSwipeLeft,
@@ -263,6 +282,10 @@ function Card({
           colors={['transparent', 'rgba(0,0,0,0.8)']}
           style={s.gradient}
         />
+        <View style={s.details}>
+          <Text style={s.name}>{job.title}</Text>
+          <Text style={s.sub}>{job.pay} • {job.duration}</Text>
+        </View>
         <View style={s.actionsOverlay}>
           {ICONS.map((icon, idx) => {
             const handler =
@@ -273,23 +296,19 @@ function Card({
                 : icon === 'map'
                 ? onMapPress
                 : () => {};
+            const color =
+              icon === 'rewind'
+                ? '#F5B642'
+                : icon === 'close'
+                ? '#FF5B5B'
+                : icon === 'star-outline'
+                ? '#4D8EFF'
+                : icon === 'heart'
+                ? '#4EFF82'
+                : '#C766FF';
             return (
               <TouchableOpacity key={idx} style={s.btnSmall} onPress={handler}>
-                <MaterialCommunityIcons
-                  name={icon as any}
-                  size={28}
-                  color={
-                    icon === 'rewind'
-                      ? '#F5B642'
-                      : icon === 'close'
-                      ? '#FF5B5B'
-                      : icon === 'star-outline'
-                      ? '#4D8EFF'
-                      : icon === 'heart'
-                      ? '#4EFF82'
-                      : '#C766FF'
-                  }
-                />
+                <MaterialCommunityIcons name={icon as any} size={28} color={color} />
               </TouchableOpacity>
             );
           })}
@@ -297,20 +316,12 @@ function Card({
         <TouchableOpacity style={s.infoBtn}>
           <MaterialCommunityIcons name="information" size={24} color="#fff" />
         </TouchableOpacity>
-        <View style={s.details}>
-          <Text style={s.name}>{job.title}</Text>
-          <Text style={s.sub}>
-            {job.pay} • {job.duration}
-          </Text>
-        </View>
       </ImageBackground>
     </View>
   );
 }
 
-/* ---------- estilos (idénticos salvo container) ---------- */
 const { width, height } = Dimensions.get('window');
-
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f2f2' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -320,7 +331,6 @@ const s = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 32,
   },
-  /* … resto de estilos sin cambios … */
   cardWrapper: {
     width: width - 40,
     height: height * 0.75,
@@ -330,7 +340,6 @@ const s = StyleSheet.create({
   card: { flex: 1, justifyContent: 'flex-end' },
   cardImage: { flex: 1 },
   gradient: { ...StyleSheet.absoluteFillObject },
-  infoBtn: { position: 'absolute', top: 16, right: 16 },
   details: { padding: 20 },
   name: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
   sub: { color: '#ddd', fontSize: 16, marginTop: 4 },
@@ -351,6 +360,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     elevation: 2,
   },
+  infoBtn: { position: 'absolute', top: 16, right: 16 },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -372,4 +382,3 @@ const s = StyleSheet.create({
     padding: 4,
   },
 });
-//   logo: {
