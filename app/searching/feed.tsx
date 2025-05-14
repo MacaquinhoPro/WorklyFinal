@@ -23,6 +23,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db, auth } from '../utils/firebaseconfig';
+import { useLocalSearchParams } from 'expo-router';   // ← NUEVO
 
 const ICONS = ['rewind', 'close', 'star-outline', 'heart', 'map'];
 
@@ -40,6 +41,9 @@ type Job = {
 };
 
 export default function Feed() {
+  /* ---------- query param focus ---------- */
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
+
   /* ---------- estado ---------- */
   const [jobsRaw, setJobsRaw] = useState<Job[]>([]);
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
@@ -48,7 +52,7 @@ export default function Feed() {
   const [mapJob, setMapJob] = useState<Job | null>(null);
 
   const defaultRegion = {
-    latitude: 4.7110,
+    latitude: 4.711,
     longitude: -74.0721,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
@@ -64,7 +68,7 @@ export default function Feed() {
     return () => unsub();
   }, []);
 
-  /* ---------- stream de aplicaciones del usuario ---------- */
+  /* ---------- stream applications ---------- */
   useEffect(() => {
     const q = query(
       collection(db, 'applications'),
@@ -78,13 +82,21 @@ export default function Feed() {
     return () => unsub();
   }, []);
 
-  /* ---------- vista filtrada ---------- */
-  const cards = useMemo(
-    () => jobsRaw.filter((j) => !appliedIds.has(j.id)),
-    [jobsRaw, appliedIds]
-  );
+  /* ---------- cards filtradas + foco ---------- */
+  const cards = useMemo(() => {
+    const list = jobsRaw.filter((j) => !appliedIds.has(j.id));
+    if (focus) {
+      const idx = list.findIndex((j) => j.id === focus);
+      if (idx > 0) {
+        // mueve la oferta enfocada al inicio
+        const [target] = list.splice(idx, 1);
+        list.unshift(target);
+      }
+    }
+    return list;
+  }, [jobsRaw, appliedIds, focus]);
 
-  /* ---------- postularse ---------- */
+  /* ---------- postular ---------- */
   const apply = async (job: Job) => {
     try {
       const appId = `${job.id}_${auth.currentUser!.uid}`;
@@ -97,18 +109,13 @@ export default function Feed() {
         description: job.description,
       });
       Alert.alert('¡Listo!', `Te postulaste a ${job.title}`);
-      // elimina de UI inmediatamente
-      // swiperRef.current?.swipeRight(); // para la animación
     } catch (e: any) {
       Alert.alert('Error', e.message);
     }
   };
 
-  /* ---------- rechazar ---------- */
-  const reject = (job: Job) => {
+  const reject = (job: Job) =>
     Alert.alert('Oferta descartada', `Descartaste ${job.title}`);
-    // swiperRef.current?.swipeLeft();
-  };
 
   /* ---------- loading / vacío ---------- */
   if (loading)
@@ -118,7 +125,7 @@ export default function Feed() {
       </View>
     );
 
-  if (!cards.length) {
+  if (!cards.length)
     return (
       <View style={[s.container, s.center]}>
         <Text style={s.finalText}>
@@ -126,7 +133,6 @@ export default function Feed() {
         </Text>
       </View>
     );
-  }
 
   /* ---------- UI ---------- */
   return (
@@ -176,8 +182,15 @@ export default function Feed() {
           },
         }}
       />
+
+      {/* ---------- modal mapa ---------- */}
       {mapJob && (
-        <Modal transparent animationType="slide" visible onRequestClose={() => setMapJob(null)}>
+        <Modal
+          transparent
+          animationType="slide"
+          visible
+          onRequestClose={() => setMapJob(null)}
+        >
           <View style={s.modalOverlay}>
             <View style={s.mapContainer}>
               <MapView
@@ -195,13 +208,20 @@ export default function Feed() {
               >
                 <Marker
                   coordinate={{
-                    latitude: mapJob.latitude || defaultRegion.latitude,
-                    longitude: mapJob.longitude || defaultRegion.longitude,
+                    latitude: mapJob.latitude ?? defaultRegion.latitude,
+                    longitude: mapJob.longitude ?? defaultRegion.longitude,
                   }}
                 />
               </MapView>
-              <TouchableOpacity style={s.mapClose} onPress={() => setMapJob(null)}>
-                <MaterialCommunityIcons name="close-circle" size={36} color="#fff" />
+              <TouchableOpacity
+                style={s.mapClose}
+                onPress={() => setMapJob(null)}
+              >
+                <MaterialCommunityIcons
+                  name="close-circle"
+                  size={36}
+                  color="#fff"
+                />
               </TouchableOpacity>
             </View>
           </View>
@@ -211,7 +231,7 @@ export default function Feed() {
   );
 }
 
-/* ---------- tarjeta individual ---------- */
+/* ---------- componente Card sin cambios ---------- */
 function Card({
   job,
   onSwipeLeft,
@@ -279,7 +299,7 @@ function Card({
   );
 }
 
-/* ---------- estilos ---------- */
+/* ---------- estilos (idénticos salvo container) ---------- */
 const { width, height } = Dimensions.get('window');
 
 const s = StyleSheet.create({
@@ -291,7 +311,7 @@ const s = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 32,
   },
-
+  /* … resto de estilos sin cambios … */
   cardWrapper: {
     width: width - 40,
     height: height * 0.75,
@@ -305,7 +325,6 @@ const s = StyleSheet.create({
   details: { padding: 20 },
   name: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
   sub: { color: '#ddd', fontSize: 16, marginTop: 4 },
-
   actionsOverlay: {
     position: 'absolute',
     bottom: height * 0.15,
@@ -323,7 +342,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     elevation: 2,
   },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -345,3 +363,4 @@ const s = StyleSheet.create({
     padding: 4,
   },
 });
+//   logo: {

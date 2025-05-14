@@ -41,6 +41,15 @@ export default function SearchingTabs() {
           ),
         }}
       />
+            <Tabs.Screen
+        name="QR"
+        options={{
+          title: 'QR',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="qr-code-outline" color={color} size={size} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="logout"
         options={{
@@ -50,6 +59,7 @@ export default function SearchingTabs() {
           ),
         }}
       />
+
     </Tabs>
   );
 }
