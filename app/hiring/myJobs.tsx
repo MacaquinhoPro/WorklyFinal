@@ -9,9 +9,11 @@ import {
   Button,
   ActivityIndicator,
   Image,
+  ImageBackground,
   Linking,
   Alert,
   ScrollView,
+  TextInput,
   StyleProp,
   TextStyle,
 } from 'react-native';
@@ -31,7 +33,6 @@ import {
   updateDoc,
   getDoc,
 } from 'firebase/firestore';
-import { router } from 'expo-router';
 
 /* ───── tipos ───────────────────────────────────────── */
 type Job = {
@@ -40,6 +41,7 @@ type Job = {
   pay: string;
   duration: string;
   requirements: string[];
+  imageUrl: string;
   latitude?: number;
   longitude?: number;
 };
@@ -60,68 +62,67 @@ type Applicant = {
 export default function MyJobs() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
-  const [selectedApplicant, setSelectedApplicant] =
-    useState<Applicant | null>(null);
+  const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
 
-  /* ───── escuchar mis puestos ───────────────────────── */
+  const [editJob, setEditJob] = useState<Job | null>(null);
+  const [editFields, setEditFields] = useState({
+    title: '',
+    pay: '',
+    duration: '',
+    requirementsText: '',
+  });
+
+  /* ───── listener jobs ─────────────────────────────── */
   useEffect(() => {
     const q = query(
       collection(db, 'jobs'),
       where('ownerUid', '==', auth.currentUser!.uid)
     );
-    const unsub = onSnapshot(q, (snap) => {
-      const arr: Job[] = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as any),
-      }));
+    const unsub = onSnapshot(q, snap => {
+      const arr = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as Job[];
       setJobs(arr);
     });
     return () => unsub();
   }, []);
 
-  /* ───── cargar postulantes ────────────────────────── */
+  /* ───── abrir detalle job ─────────────────────────── */
   const openJob = async (job: Job) => {
-    const jobSnapFull = await getDoc(doc(db, 'jobs', job.id));
-    let fullData: any = {};
-    if (jobSnapFull.exists()) {
-      fullData = jobSnapFull.data();
-    }
-    setSelectedJob({ ...job, ...fullData });
+    const snap = await getDoc(doc(db, 'jobs', job.id));
+    let full = job;
+    if (snap.exists()) full = { ...job, ...(snap.data() as any) };
+    setSelectedJob(full);
     setSelectedApplicant(null);
     setLoadingApplicants(true);
 
     const qs = await getDocs(
       query(collection(db, 'applications'), where('jobId', '==', job.id))
     );
-
-    const array: Applicant[] = qs.docs.map((d) => {
-      const data: any = d.data();
+    const apps = qs.docs.map(d => {
+      const data = d.data() as any;
       return {
         appId: d.id,
         userId: data.userId,
         status: data.status,
-        name: data.name || 'N/A',
+        name: data.name,
         experienceYears: data.experienceYears ?? null,
-        email: data.email || 'N/A',
+        email: data.email,
         photoURL: data.photoURL,
         description: data.descriptionUser || data.description || '',
         resumeURL: data.resumeURL || '',
-      };
+      } as Applicant;
     });
-
-    setApplicants(array);
+    setApplicants(apps);
     setLoadingApplicants(false);
   };
 
-  /* ───── cambiar estado ────────────────────────────── */
+  /* ───── cambio de estado postulante ──────────────── */
   const changeStatus = async (app: Applicant, status: string) => {
     try {
       await updateDoc(doc(db, 'applications', app.appId), { status });
-      setApplicants((prev) =>
-        prev.map((a) => (a.appId === app.appId ? { ...a, status } : a))
+      setApplicants(prev =>
+        prev.map(a => (a.appId === app.appId ? { ...a, status } : a))
       );
       setSelectedApplicant(null);
     } catch (e: any) {
@@ -129,30 +130,67 @@ export default function MyJobs() {
     }
   };
 
-  /* ───── eliminar puesto ───────────────────────────── */
+  /* ───── eliminar job ──────────────────────────────── */
   const deleteJob = async (jobId: string) => {
     await deleteDoc(doc(db, 'jobs', jobId));
   };
 
-  /* ───── render puesto ─────────────────────────────── */
+  /* ───── preparar edición ──────────────────────────── */
+  const handleEdit = (job: Job) => {
+    setEditJob(job);
+    setEditFields({
+      title: job.title,
+      pay: job.pay,
+      duration: job.duration,
+      requirementsText: job.requirements.join(', '),
+    });
+  };
+
+  /* ───── guardar edición ───────────────────────────── */
+  const saveEdit = async () => {
+    if (!editJob) return;
+    try {
+      const reqs = editFields.requirementsText
+        .split(',')
+        .map(r => r.trim())
+        .filter(r => r);
+      await updateDoc(doc(db, 'jobs', editJob.id), {
+        title: editFields.title,
+        pay: editFields.pay,
+        duration: editFields.duration,
+        requirements: reqs,
+      });
+      setEditJob(null);
+    } catch (e: any) {
+      Alert.alert('Error al guardar', e.message);
+    }
+  };
+
+  /* ───── render job ────────────────────────────────── */
   const renderJob = ({ item }: { item: Job }) => (
-    <TouchableOpacity style={s.card} onPress={() => openJob(item)}>
-      <Text style={s.title}>{item.title}</Text>
-      <Text>{item.duration}</Text>
-      <Text>{item.pay}</Text>
-      <View style={s.row}>
-        <Button
-          title="Editar"
-          onPress={() =>
-            router.push({ pathname: '/hiring/publish', params: { jobId: item.id } })
-          }
-        />
-        <Button title="Eliminar" color="red" onPress={() => deleteJob(item.id)} />
-      </View>
+    <TouchableOpacity
+      style={s.cardWrapper}
+      onPress={() => openJob(item)}
+      activeOpacity={0.8}
+    >
+      <ImageBackground
+        source={{ uri: item.imageUrl }}
+        style={s.card}
+        imageStyle={s.cardImage}
+      >
+        <View style={s.cardOverlay}>
+          <Text style={s.title}>{item.title}</Text>
+          <Text style={s.subtitle}>{item.duration} • {item.pay}</Text>
+          <View style={s.row}>
+            <Button title="Editar" onPress={() => handleEdit(item)} />
+            <Button title="Eliminar" color="red" onPress={() => deleteJob(item.id)} />
+          </View>
+        </View>
+      </ImageBackground>
     </TouchableOpacity>
   );
 
-  /* ───── render postulante en lista ────────────────── */
+  /* ───── render postulante ─────────────────────────── */
   const renderApplicant = ({ item }: { item: Applicant }) => (
     <TouchableOpacity
       style={s.appItem}
@@ -164,255 +202,186 @@ export default function MyJobs() {
     </TouchableOpacity>
   );
 
-  /* ───── UI principal ─────────────────────────────── */
   return (
     <SafeAreaView style={s.container}>
-      <FlatList data={jobs} keyExtractor={(j) => j.id} renderItem={renderJob} />
+      <FlatList data={jobs} keyExtractor={j => j.id} renderItem={renderJob} />
 
-      {/* ─── modal puesto y postulantes ───────────────── */}
-      <Modal visible={selectedJob != null} animationType="slide">
+      {/* ─── Modal Detalle Job ───────────────────────── */}
+      <Modal visible={!!selectedJob} animationType="slide">
         <SafeAreaView style={s.modalContainer}>
           <TouchableOpacity style={s.backButton} onPress={() => setSelectedJob(null)}>
             <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>
           <View style={s.modalContent}>
-          {selectedJob && (
-            <>
-              <Text style={s.modalTitle}>{selectedJob.title}</Text>
-              <Text style={s.detailText}>Salario: {selectedJob.pay}</Text>
-              <Text style={s.detailText}>Duración: {selectedJob.duration}</Text>
-              <View style={s.detailList}>
-                <Text style={s.detailText}>Requisitos:</Text>
-                {selectedJob.requirements.map((req, i) => (
-                  <Text key={i} style={s.detailText}>• {req}</Text>
-                ))}
-              </View>
-              <MapView
-                style={s.detailMap}
-                initialRegion={{
-                  latitude: selectedJob.latitude ?? 4.7110,
-                  longitude: selectedJob.longitude ?? -74.0721,
-                  latitudeDelta: 0.05,
-                  longitudeDelta: 0.05,
-                }}
-              >
-                <Marker
-                  coordinate={{
+            {selectedJob && (
+              <>
+                <Text style={s.modalTitle}>{selectedJob.title}</Text>
+                <Text style={s.detailText}>Salario: {selectedJob.pay}</Text>
+                <Text style={s.detailText}>Duración: {selectedJob.duration}</Text>
+                <View style={s.detailList}>
+                  <Text style={s.detailText}>Requisitos:</Text>
+                  {selectedJob.requirements.map((r,i) => (
+                    <Text key={i} style={s.detailText}>• {r}</Text>
+                  ))}
+                </View>
+                <MapView
+                  style={s.detailMap}
+                  initialRegion={{
                     latitude: selectedJob.latitude ?? 4.7110,
                     longitude: selectedJob.longitude ?? -74.0721,
+                    latitudeDelta: 0.05,
+                    longitudeDelta: 0.05,
                   }}
-                />
-              </MapView>
-
-              {loadingApplicants ? (
-                <ActivityIndicator size="large" />
-              ) : selectedApplicant ? (
-                /* ─── detalle postulante ─────── */
-                <ScrollView contentContainerStyle={{ paddingVertical: 20 }}>
-                  {selectedApplicant.photoURL && (
-                    <Image
-                      source={{ uri: selectedApplicant.photoURL }}
-                      style={s.appPhoto}
-                    />
-                  )}
-                  <Text style={s.detailName}>{selectedApplicant.name}</Text>
-                  <Text style={s.detailText}>
-                    Correo: {selectedApplicant.email}
-                  </Text>
-                  {selectedApplicant.description && (
-                    <Text style={s.detailText}>
-                      {selectedApplicant.description}
-                    </Text>
-                  )}
-                  {selectedApplicant.resumeURL ? (
-                    <Text
-                      style={[
-                        s.detailText,
-                        {
-                          color: '#1e88e5',
-                          textDecorationLine: 'underline',
-                        },
-                      ]}
-                      onPress={() =>
-                        Linking.openURL(selectedApplicant.resumeURL!)
-                      }
-                    >
-                      Ver hoja de vida
-                    </Text>
-                  ) : (
-                    <Text style={s.detailText}>Sin hoja de vida</Text>
-                  )}
-
-                  <View style={s.detailButtons}>
-                    <Button
-                      title="Rechazar"
-                      color="#e53935"
-                      onPress={() =>
-                        changeStatus(selectedApplicant, 'rejected')
-                      }
-                    />
-                    <Button
-                      title="Entrevista"
-                      color="#fb8c00"
-                      onPress={() =>
-                        changeStatus(selectedApplicant, 'waiting')
-                      }
-                    />
-                  </View>
-                  <Button
-                    title="Volver a lista"
-                    onPress={() => setSelectedApplicant(null)}
+                >
+                  <Marker
+                    coordinate={{
+                      latitude: selectedJob.latitude ?? 4.7110,
+                      longitude: selectedJob.longitude ?? -74.0721,
+                    }}
                   />
-                </ScrollView>
-              ) : applicants.length === 0 ? (
-                <Text>No hay postulantes</Text>
-              ) : (
-                <FlatList
-                  data={applicants}
-                  keyExtractor={(a) => a.appId}
-                  renderItem={renderApplicant}
-                />
-              )}
-            </>
-          )}
+                </MapView>
+
+                {loadingApplicants
+                  ? <ActivityIndicator size="large" />
+                  : selectedApplicant
+                  ? (
+                    <ScrollView contentContainerStyle={{ padding:20 }}>
+                      {selectedApplicant.photoURL && (
+                        <Image source={{ uri:selectedApplicant.photoURL }} style={s.appPhoto}/>
+                      )}
+                      <Text style={s.detailName}>{selectedApplicant.name}</Text>
+                      <Text style={s.detailText}>Correo: {selectedApplicant.email}</Text>
+                      {selectedApplicant.description && (
+                        <Text style={s.detailText}>{selectedApplicant.description}</Text>
+                      )}
+                      {selectedApplicant.resumeURL ? (
+                        <Text
+                          style={[s.detailText, { color:'#1e88e5', textDecorationLine:'underline' }]}
+                          onPress={()=>Linking.openURL(selectedApplicant.resumeURL!)}
+                        >Ver hoja de vida</Text>
+                      ) : <Text style={s.detailText}>Sin hoja de vida</Text>}
+                      <View style={s.detailButtons}>
+                        <Button title="Rechazar" color="#e53935" onPress={()=>changeStatus(selectedApplicant,'rejected')} />
+                        <Button title="Entrevista" color="#fb8c00" onPress={()=>changeStatus(selectedApplicant,'waiting')} />
+                      </View>
+                      <Button title="Volver a lista" onPress={()=>setSelectedApplicant(null)} />
+                    </ScrollView>
+                  )
+                  : applicants.length === 0
+                  ? <Text style={s.detailText}>No hay postulantes</Text>
+                  : (
+                    <FlatList
+                      data={applicants}
+                      keyExtractor={a=>a.appId}
+                      renderItem={renderApplicant}
+                    />
+                  )
+                }
+              </>
+            )}
           </View>
         </SafeAreaView>
+      </Modal>
+
+      {/* ─── Modal Edición Inline ─────────────────────── */}
+      <Modal visible={!!editJob} animationType="fade" transparent>
+        <View style={s.editOverlay}>
+          <View style={s.editContainer}>
+            <ScrollView>
+              <Text style={s.modalTitle}>Editar Puesto</Text>
+              <TextInput
+                style={s.input}
+                placeholder="Título"
+                value={editFields.title}
+                onChangeText={t=>setEditFields(f=>({...f,title:t}))}
+              />
+              <TextInput
+                style={s.input}
+                placeholder="Salario"
+                value={editFields.pay}
+                onChangeText={t=>setEditFields(f=>({...f,pay:t}))}
+              />
+              <TextInput
+                style={s.input}
+                placeholder="Duración"
+                value={editFields.duration}
+                onChangeText={t=>setEditFields(f=>({...f,duration:t}))}
+              />
+              <TextInput
+                style={[s.input,{height:80}]}
+                placeholder="Requisitos (coma)"
+                multiline
+                value={editFields.requirementsText}
+                onChangeText={t=>setEditFields(f=>({...f,requirementsText:t}))}
+              />
+              <View style={s.detailButtons}>
+                <Button title="Cancelar" onPress={()=>setEditJob(null)} />
+                <Button title="Guardar" onPress={saveEdit} />
+              </View>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
 }
 
-/* ───── estilos ─────────────────────────────────────── */
 const s = StyleSheet.create({
   container: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: getStatusBarHeight(true),
-    backgroundColor: '#f5f5f5',
+    flex:1,
+    backgroundColor:'#f5f5f5',
+    paddingTop:getStatusBarHeight(true),
+    paddingHorizontal:16,
   },
-  modalContainer: {
-    flex: 1,
-    paddingHorizontal: 0,
-    paddingTop: getStatusBarHeight(true) + 8,
-    backgroundColor: '#f0f2f5',
+  cardWrapper:{
+    marginVertical:8,
+    borderRadius:12,
+    overflow:'hidden',
+    elevation:3,
   },
-  modalContent: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    marginTop: 80,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    // iOS shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    // Android elevation
-    elevation: 4,
+  card:{
+    width:'100%',
+    height:180,
+    justifyContent:'flex-end',
   },
-  backButton: {
-    position: 'absolute',
-    top: getStatusBarHeight(true) + 32,
-    left: 16,
-    padding: 8,
-    zIndex: 10,
+  cardImage:{ resizeMode:'cover' },
+  cardOverlay:{
+    backgroundColor:'rgba(0,0,0,0.4)',
+    padding:12,
   },
-  card: {
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderRadius: 12,
-    marginVertical: 8,
-    // iOS shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    // Android elevation
-    elevation: 3,
-  },
-  title: { fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  modalTitle: { 
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
+  title:{ color:'#fff', fontSize:18, fontWeight:'bold' },
+  subtitle:{ color:'#eee', fontSize:14, marginVertical:4 },
+  row:{ flexDirection:'row', justifyContent:'space-between', marginTop:8 },
+
+  /* modal detalle */
+  modalContainer:{ flex:1, backgroundColor:'#f0f2f5', paddingTop:getStatusBarHeight(true)+8 },
+  backButton:{ position:'absolute', top:getStatusBarHeight(true)+32, left:16, padding:8, zIndex:10 },
+  modalContent:{ flex:1, backgroundColor:'#fff', marginTop:80, borderTopLeftRadius:16, borderTopRightRadius:16, padding:16, elevation:4 },
+  modalTitle:{ fontSize:24, fontWeight:'700', marginBottom:16, textAlign:'center' },
+  detailText:{ fontSize:16, color:'#444', marginBottom:8 },
+  detailList:{ marginBottom:12 },
+  detailMap:{ width:'100%', height:200, borderRadius:12, marginBottom:16 },
+  detailName:{ fontSize:20, fontWeight:'600', textAlign:'center', marginBottom:10 },
+  detailButtons:{ flexDirection:'row', justifyContent:'space-around', marginVertical:20 },
+  appPhoto:{ width:160, height:160, borderRadius:80, alignSelf:'center', marginBottom:20 },
+
+  /* modal edición inline */
+  editOverlay:{ flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center' },
+  editContainer:{ width:'90%', backgroundColor:'#fff', borderRadius:12, padding:16, maxHeight:'80%' },
+  input:{ borderWidth:1, borderColor:'#ccc', borderRadius:8, padding:10, marginBottom:12 },
 
   /* lista postulantes */
-  appItem: {
-    backgroundColor: '#ffffff',
-    padding: 16,
-    borderRadius: 12,
-    marginVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    // iOS shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    // Android elevation
-    elevation: 2,
-  },
-  appName: { flex: 1, fontSize: 16, fontWeight: '500' },
-  appemail: { fontSize: 14, color: '#666' },
-  appExp: { width: 110, fontSize: 14, color: '#666' },
-
-  /* detalle postulante */
-  appPhoto: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-  detailName: {
-    fontSize: 20,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  detailText: {
-    fontSize: 16,
-    color: '#444',
-    marginBottom: 8,
-    width: '100%',
-    textAlign: 'left',
-  },
-  detailList: {
-    width: '100%',
-    marginBottom: 12,
-  },
-  detailMap: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  detailButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginVertical: 20,
-  },
+  appItem:{ padding:12, borderBottomWidth:1, borderBottomColor:'#ddd' },
+  appName:{ fontSize:16, fontWeight:'bold', color:'#000' },
+  appemail:{ fontSize:14, color:'#333' },
 });
 
-/* ───── badge dinámico ─────────────────────────────── */
-const badgeStyle = (status: string): StyleProp<TextStyle> => ({
-  paddingHorizontal: 8,
-  paddingVertical: 4,
-  borderRadius: 6,
-  overflow: 'hidden',
-  color: '#fff',
-  fontSize: 12,
-  marginLeft: 12,
+// badge dinámico
+const badgeStyle = (status:string):StyleProp<TextStyle> => ({
+  paddingHorizontal:8, paddingVertical:4, borderRadius:6, overflow:'hidden',
+  color:'#fff', fontSize:12, marginLeft:12,
   backgroundColor:
-    status === 'waiting'
-      ? '#ffa726'
-      : status === 'accepted'
-      ? '#66bb6a'
-      : status === 'rejected'
-      ? '#ef5350'
-      : '#90a4ae',
+    status==='waiting' ? '#ffa726' :
+    status==='accepted'? '#66bb6a' :
+    status==='rejected'? '#ef5350':'#90a4ae'
 });

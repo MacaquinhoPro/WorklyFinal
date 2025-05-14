@@ -97,22 +97,31 @@ export default function Feed() {
   }, [jobsRaw, appliedIds, focus]);
 
   /* ---------- postular ---------- */
-  const apply = async (job: Job) => {
-    try {
-      const appId = `${job.id}_${auth.currentUser!.uid}`;
-      await setDoc(doc(db, 'applications', appId), {
-        jobId: job.id,
-        userId: auth.currentUser!.uid,
-        status: 'pending',
-        createdAt: Date.now(),
-        title: job.title,
-        description: job.description,
-      });
-      Alert.alert('¡Listo!', `Te postulaste a ${job.title}`);
-    } catch (e: any) {
-      Alert.alert('Error', e.message);
-    }
-  };
+const apply = async (job: Job) => {
+  try {
+    const user = auth.currentUser!;
+    const name = user.displayName ?? 'Sin nombre';
+    const email = user.email ?? 'Sin correo';
+
+    const appId = `${job.id}_${user.uid}`;
+    await setDoc(doc(db, 'applications', appId), {
+      jobId: job.id,
+      userId: user.uid,
+      status: 'pending',
+      createdAt: Date.now(),
+      title: job.title,
+      description: job.description,
+      // nuevos campos
+      name,  
+      email,
+    });
+
+    Alert.alert('¡Listo!', `Te postulaste a ${job.title}`);
+  } catch (e: any) {
+    Alert.alert('Error', e.message);
+  }
+};
+
 
   const reject = (job: Job) =>
     Alert.alert('Oferta descartada', `Descartaste ${job.title}`);
