@@ -16,10 +16,10 @@ import {
   TextInput,
   StyleProp,
   TextStyle,
+  SafeAreaView,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { getStatusBarHeight } from 'react-native-iphone-x-helper';
 import { db, auth } from '../utils/firebaseconfig';
 import {
@@ -38,7 +38,7 @@ import {
 type Job = {
   id: string;
   title: string;
-  description: string;      // <-- agregado
+  description: string;
   pay: string;
   duration: string;
   requirements: string[];
@@ -216,7 +216,20 @@ export default function MyJobs() {
 
   return (
     <SafeAreaView style={s.container}>
-      <FlatList data={jobs} keyExtractor={j => j.id} renderItem={renderJob} />
+      {jobs.length === 0 ? (
+        <View style={s.noJobsContainer}>
+          <Text style={s.noJobsText}>
+            ¡Aún no tienes trabajos publicados!{'\n'}
+            Para empezar a publicar presiona abajo en la barra de navegación "Publicar"
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={jobs}
+          keyExtractor={j => j.id}
+          renderItem={renderJob}
+        />
+      )}
 
       {/* ─── Modal Detalle Job ───────────────────────── */}
       <Modal visible={!!selectedJob} animationType="slide">
@@ -233,7 +246,7 @@ export default function MyJobs() {
                 <Text style={s.detailText}>Duración: {selectedJob.duration}</Text>
                 <View style={s.detailList}>
                   <Text style={s.detailText}>Requisitos:</Text>
-                  {selectedJob.requirements.map((r,i) => (
+                  {selectedJob.requirements.map((r, i) => (
                     <Text key={i} style={s.detailText}>• {r}</Text>
                   ))}
                 </View>
@@ -254,42 +267,51 @@ export default function MyJobs() {
                   />
                 </MapView>
 
-                {loadingApplicants
-                  ? <ActivityIndicator size="large" />
-                  : selectedApplicant
-                  ? (
-                    <ScrollView contentContainerStyle={{ padding:20 }}>
-                      {selectedApplicant.photoURL && (
-                        <Image source={{ uri:selectedApplicant.photoURL }} style={s.appPhoto}/>
-                      )}
-                      <Text style={s.detailName}>{selectedApplicant.name}</Text>
-                      <Text style={s.detailText}>Correo: {selectedApplicant.email}</Text>
-                      {selectedApplicant.description && (
-                        <Text style={s.detailText}>{selectedApplicant.description}</Text>
-                      )}
-                      {selectedApplicant.resumeURL ? (
-                        <Text
-                          style={[s.detailText, { color:'#1e88e5', textDecorationLine:'underline' }]}
-                          onPress={()=>Linking.openURL(selectedApplicant.resumeURL!)}
-                        >Ver hoja de vida</Text>
-                      ) : <Text style={s.detailText}>Sin hoja de vida</Text>}
-                      <View style={s.detailButtons}>
-                        <Button title="Rechazar" color="#e53935" onPress={()=>changeStatus(selectedApplicant,'rejected')} />
-                        <Button title="Entrevista" color="#fb8c00" onPress={()=>changeStatus(selectedApplicant,'waiting')} />
-                      </View>
-                      <Button title="Volver a lista" onPress={()=>setSelectedApplicant(null)} />
-                    </ScrollView>
-                  )
-                  : applicants.length === 0
-                  ? <Text style={s.detailText}>No hay postulantes</Text>
-                  : (
-                    <FlatList
-                      data={applicants}
-                      keyExtractor={a=>a.appId}
-                      renderItem={renderApplicant}
-                    />
-                  )
-                }
+                {loadingApplicants ? (
+                  <ActivityIndicator size="large" />
+                ) : selectedApplicant ? (
+                  <ScrollView contentContainerStyle={{ padding: 20 }}>
+                    {selectedApplicant.photoURL && (
+                      <Image source={{ uri: selectedApplicant.photoURL }} style={s.appPhoto} />
+                    )}
+                    <Text style={s.detailName}>{selectedApplicant.name}</Text>
+                    <Text style={s.detailText}>Correo: {selectedApplicant.email}</Text>
+                    {selectedApplicant.description && (
+                      <Text style={s.detailText}>{selectedApplicant.description}</Text>
+                    )}
+                    {selectedApplicant.resumeURL ? (
+                      <Text
+                        style={[s.detailText, { color: '#1e88e5', textDecorationLine: 'underline' }]}
+                        onPress={() => Linking.openURL(selectedApplicant.resumeURL!)}
+                      >
+                        Ver hoja de vida
+                      </Text>
+                    ) : (
+                      <Text style={s.detailText}>Sin hoja de vida</Text>
+                    )}
+                    <View style={s.detailButtons}>
+                      <Button
+                        title="Rechazar"
+                        color="#e53935"
+                        onPress={() => changeStatus(selectedApplicant, 'rejected')}
+                      />
+                      <Button
+                        title="Entrevista"
+                        color="#fb8c00"
+                        onPress={() => changeStatus(selectedApplicant, 'waiting')}
+                      />
+                    </View>
+                    <Button title="Volver a lista" onPress={() => setSelectedApplicant(null)} />
+                  </ScrollView>
+                ) : applicants.length === 0 ? (
+                  <Text style={s.detailText}>No hay postulantes</Text>
+                ) : (
+                  <FlatList
+                    data={applicants}
+                    keyExtractor={a => a.appId}
+                    renderItem={renderApplicant}
+                  />
+                )}
               </>
             )}
           </View>
@@ -306,29 +328,29 @@ export default function MyJobs() {
                 style={s.input}
                 placeholder="Título"
                 value={editFields.title}
-                onChangeText={t=>setEditFields(f=>({...f,title:t}))}
+                onChangeText={t => setEditFields(f => ({ ...f, title: t }))}
               />
               <TextInput
                 style={s.input}
                 placeholder="Salario"
                 value={editFields.pay}
-                onChangeText={t=>setEditFields(f=>({...f,pay:t}))}
+                onChangeText={t => setEditFields(f => ({ ...f, pay: t }))}
               />
               <TextInput
                 style={s.input}
                 placeholder="Duración"
                 value={editFields.duration}
-                onChangeText={t=>setEditFields(f=>({...f,duration:t}))}
+                onChangeText={t => setEditFields(f => ({ ...f, duration: t }))}
               />
               <TextInput
-                style={[s.input,{height:80}]}
-                placeholder="Requisitos (coma)"
+                style={[s.input, { height: 80 }]}
+                placeholder="Requisitos (separados por coma)"
                 multiline
                 value={editFields.requirementsText}
-                onChangeText={t=>setEditFields(f=>({...f,requirementsText:t}))}
+                onChangeText={t => setEditFields(f => ({ ...f, requirementsText: t }))}
               />
               <View style={s.detailButtons}>
-                <Button title="Cancelar" onPress={()=>setEditJob(null)} />
+                <Button title="Cancelar" onPress={() => setEditJob(null)} />
                 <Button title="Guardar" onPress={saveEdit} />
               </View>
             </ScrollView>
@@ -341,62 +363,176 @@ export default function MyJobs() {
 
 const s = StyleSheet.create({
   container: {
-    flex:1,
-    backgroundColor:'#f5f5f5',
-    paddingTop:getStatusBarHeight(true),
-    paddingHorizontal:16,
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    paddingTop: getStatusBarHeight(true),
+    paddingHorizontal: 16,
   },
-  cardWrapper:{
-    marginVertical:8,
-    borderRadius:12,
-    overflow:'hidden',
-    elevation:3,
+  noJobsContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  card:{
-    width:'100%',
-    height:180,
-    justifyContent:'flex-end',
+  noJobsText: {
+    fontSize: 18,
+    color: '#444',
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
-  cardImage:{ resizeMode:'cover' },
-  cardOverlay:{
-    backgroundColor:'rgba(0,0,0,0.4)',
-    padding:12,
+  cardWrapper: {
+    marginVertical: 8,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 3,
   },
-  title:{ color:'#fff', fontSize:18, fontWeight:'bold' },
-  desc:{ color:'#eee', fontSize:14, marginBottom:4 },       // descripción en tarjeta
-  subtitle:{ color:'#eee', fontSize:14, marginVertical:4 },
-  row:{ flexDirection:'row', justifyContent:'space-between', marginTop:8 },
-
-  /* modal detalle */
-  modalContainer:{ flex:1, backgroundColor:'#f0f2f5', paddingTop:getStatusBarHeight(true)+8 },
-  backButton:{ position:'absolute', top:getStatusBarHeight(true)+32, left:16, padding:8, zIndex:10 },
-  modalContent:{ flex:1, backgroundColor:'#fff', marginTop:80, borderTopLeftRadius:16, borderTopRightRadius:16, padding:16, elevation:4 },
-  modalTitle:{ fontSize:24, fontWeight:'700', marginBottom:8, textAlign:'center' },
-  detailDescription:{ fontSize:16, color:'#555', marginBottom:12, textAlign:'left' },  // descripción en modal
-  detailText:{ fontSize:16, color:'#444', marginBottom:8 },
-  detailList:{ marginBottom:12 },
-  detailMap:{ width:'100%', height:200, borderRadius:12, marginBottom:16 },
-  detailName:{ fontSize:20, fontWeight:'600', textAlign:'center', marginBottom:10 },
-  detailButtons:{ flexDirection:'row', justifyContent:'space-around', marginVertical:20 },
-  appPhoto:{ width:160, height:160, borderRadius:80, alignSelf:'center', marginBottom:20 },
-
-  /* modal edición inline */
-  editOverlay:{ flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', alignItems:'center' },
-  editContainer:{ width:'90%', backgroundColor:'#fff', borderRadius:12, padding:16, maxHeight:'80%' },
-  input:{ borderWidth:1, borderColor:'#ccc', borderRadius:8, padding:10, marginBottom:12 },
-
-  /* lista postulantes */
-  appItem:{ padding:12, borderBottomWidth:1, borderBottomColor:'#ddd' },
-  appName:{ fontSize:16, fontWeight:'bold', color:'#000' },
-  appemail:{ fontSize:14, color:'#333' },
+  card: {
+    width: '100%',
+    height: 180,
+    justifyContent: 'flex-end',
+  },
+  cardImage: {
+    resizeMode: 'cover',
+  },
+  cardOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    padding: 12,
+  },
+  title: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  desc: {
+    color: '#eee',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  subtitle: {
+    color: '#eee',
+    fontSize: 14,
+    marginVertical: 4,
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#f0f2f5',
+    paddingTop: getStatusBarHeight(true) + 8,
+  },
+  backButton: {
+    position: 'absolute',
+    top: getStatusBarHeight(true) + 32,
+    left: 16,
+    padding: 8,
+    zIndex: 10,
+  },
+  modalContent: {
+    flex: 1,
+    backgroundColor: '#fff',
+    marginTop: 80,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    elevation: 4,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  detailDescription: {
+    fontSize: 16,
+    color: '#555',
+    marginBottom: 12,
+    textAlign: 'left',
+  },
+  detailText: {
+    fontSize: 16,
+    color: '#444',
+    marginBottom: 8,
+  },
+  detailList: {
+    marginBottom: 12,
+  },
+  detailMap: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  detailName: {
+    fontSize: 20,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  detailButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginVertical: 20,
+  },
+  appPhoto: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  editOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editContainer: {
+    width: '90%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    maxHeight: '80%',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  appItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  appName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  appemail: {
+    fontSize: 14,
+    color: '#333',
+  },
 });
 
 // badge dinámico
-const badgeStyle = (status:string):StyleProp<TextStyle> => ({
-  paddingHorizontal:8, paddingVertical:4, borderRadius:6, overflow:'hidden',
-  color:'#fff', fontSize:12, marginLeft:12,
+const badgeStyle = (status: string): StyleProp<TextStyle> => ({
+  paddingHorizontal: 8,
+  paddingVertical: 4,
+  borderRadius: 6,
+  overflow: 'hidden',
+  color: '#fff',
+  fontSize: 12,
+  marginLeft: 12,
   backgroundColor:
-    status==='waiting' ? '#ffa726' :
-    status==='accepted'? '#66bb6a' :
-    status==='rejected'? '#ef5350':'#90a4ae'
+    status === 'waiting'
+      ? '#ffa726'
+      : status === 'accepted'
+      ? '#66bb6a'
+      : status === 'rejected'
+      ? '#ef5350'
+      : '#90a4ae',
 });
