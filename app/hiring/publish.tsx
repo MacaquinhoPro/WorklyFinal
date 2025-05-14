@@ -8,8 +8,10 @@ import {
   StyleSheet,
   Alert,
   Image,
+  TouchableOpacity,
+  Platform,
+  Dimensions,
 } from 'react-native';
-import { TouchableOpacity, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
@@ -21,15 +23,15 @@ import {
   collection,
   serverTimestamp,
   getDoc,
+  setDoc,
 } from 'firebase/firestore';
 import { db, auth, storage } from '../utils/firebaseconfig';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Dimensions } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Form {
   title: string;
@@ -38,136 +40,6 @@ interface Form {
   duration: string;
   requirements: string;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: getStatusBarHeight(true),
-    backgroundColor: '#ffffff',
-  },
-  content: {
-    paddingVertical: 16,
-  },
-  input: {
-    width: '100%',
-    height: 60,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    marginVertical: 16,
-    // iOS shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    // Android elevation
-    elevation: 3,
-  },
-  inputMultiline: {
-    height: 200,
-    textAlignVertical: 'top',
-  },
-  button: {
-    alignSelf: 'center',
-    width: '80%',
-    marginVertical: 24,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  buttonGradient: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  err: { color: 'red', marginBottom: 8 },
-  imgBtn: {
-    width: '100%',
-    aspectRatio: 1,
-    borderRadius: 20,
-    backgroundColor: '#f5f5f5',
-    marginVertical: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    // iOS shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    // Android elevation
-    elevation: 3,
-  },
-  imgPreview: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 20,
-  },
-  imgText: { color: '#555' },
-  removeBtn: {
-    position: 'absolute',
-    bottom: 10,
-    right: 10,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    // iOS shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    // Android elevation
-    elevation: 2,
-  },
-  stepIndicator: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginVertical: 12,
-  },
-  stepDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginHorizontal: 6,
-  },
-  stepDotActive: {
-    backgroundColor: '#5A40EA',
-  },
-  stepDotInactive: {
-    backgroundColor: '#ccc',
-  },
-  navButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 24,
-  },
-  navButtonsCenter: {
-    justifyContent: 'center',
-  },
-  navText: {
-    fontSize: 16,
-    color: '#5A40EA',
-    fontWeight: '600',
-  },
-  stepContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-  },
-  navTextDisabled: {
-    color: '#ccc',
-  },
-});
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -200,18 +72,16 @@ export default function Publish() {
       requirements: '',
     },
   });
-  
+
   const title = watch('title');
   const description = watch('description');
   const pay = watch('pay');
   const duration = watch('duration');
   const requirements = watch('requirements');
-  
-  /* ---------- imagen ---------- */
-  const [imageUri, setImageUri] = React.useState<string>('');
-  
+
+  const [imageUri, setImageUri] = useState<string>('');
   const [region, setRegion] = useState({
-    latitude: 4.7110,
+    latitude: 4.711,
     longitude: -74.0721,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
@@ -242,7 +112,6 @@ export default function Publish() {
     }
   };
 
-  /* ---------- cargar datos para edición ---------- */
   React.useEffect(() => {
     if (!isEdit) return;
     (async () => {
@@ -270,10 +139,8 @@ export default function Publish() {
     })();
   }, []);
 
-  /* ---------- enviar ---------- */
   const onSubmit = async (data: Form) => {
     try {
-      // 1. subir imagen si es local
       let photoURL = imageUri;
       if (imageUri && !imageUri.startsWith('http')) {
         const fileRef = ref(
@@ -286,7 +153,6 @@ export default function Publish() {
         photoURL = await getDownloadURL(fileRef);
       }
 
-      // 2. payload
       const payload = {
         ownerUid: auth.currentUser!.uid,
         title: data.title,
@@ -294,15 +160,18 @@ export default function Publish() {
         pay: data.pay,
         duration: data.duration,
         requirements: data.requirements.split(',').map((t) => t.trim()),
-        imageUrl: photoURL, // <- clave utilizada por searching/feed
+        imageUrl: photoURL,
         latitude: marker!.latitude,
         longitude: marker!.longitude,
         createdAt: serverTimestamp(),
       };
 
-      // 3. crear / actualizar
-      if (isEdit) await updateDoc(doc(db, 'jobs', jobId!), payload);
-      else await addDoc(collection(db, 'jobs'), payload);
+      if (isEdit) {
+        await updateDoc(doc(db, 'jobs', jobId!), payload);
+      } else {
+        const newRef = doc(collection(db, 'jobs'));
+        await setDoc(newRef, { ...payload, id: newRef.id });
+      }
 
       Alert.alert('Éxito', isEdit ? 'Puesto actualizado' : 'Puesto publicado');
       router.replace('/hiring/myJobs');
@@ -311,7 +180,6 @@ export default function Publish() {
     }
   };
 
-  /* ---------- campo reutilizable ---------- */
   const Field = ({
     name,
     placeholder,
@@ -345,10 +213,8 @@ export default function Publish() {
     </>
   );
 
-  /* ---------- UI ---------- */
   return (
     <SafeAreaView style={styles.container}>
-      {/* Step indicator */}
       <View style={styles.stepIndicator}>
         {[...Array(totalSteps)].map((_, i) => (
           <View
@@ -362,7 +228,6 @@ export default function Publish() {
       </View>
       <View style={styles.stepContainer}>
         {step === 0 && (
-          // Step 1: Image picker
           <TouchableOpacity style={styles.imgBtn} onPress={pickImage}>
             {imageUri ? (
               <>
@@ -380,33 +245,23 @@ export default function Publish() {
           </TouchableOpacity>
         )}
         {step === 1 && (
-          // Step 2: Title & Description
           <>
             <Field name="title" placeholder="Título del puesto" />
             <Field name="description" placeholder="Descripción" multiline />
           </>
         )}
         {step === 2 && (
-          // Step 3: Pay & Duration
           <>
             <Field name="pay" placeholder="Pago / salario" />
-            <Field
-              name="duration"
-              placeholder="Duración (p.ej. tiempo completo)"
-            />
+            <Field name="duration" placeholder="Duración (p.ej. tiempo completo)" />
           </>
         )}
         {step === 3 && (
-          // Step 4: Requirements & Submit
           <>
-            <Field
-              name="requirements"
-              placeholder="Requisitos (separados por coma)"
-            />
+            <Field name="requirements" placeholder="Requisitos (separados por coma)" />
           </>
         )}
         {step === 4 && (
-          // Step 5: Location picker
           <>
             <MapView
               style={{ width: '100%', flex: 1, borderRadius: 16 }}
@@ -449,10 +304,12 @@ export default function Publish() {
             onPress={() => canGoNext && setStep(step + 1)}
             disabled={!canGoNext}
           >
-            <Text style={[
-              styles.navText,
-              !canGoNext && styles.navTextDisabled
-            ]}>
+            <Text
+              style={[
+                styles.navText,
+                !canGoNext && styles.navTextDisabled,
+              ]}
+            >
               Siguiente
             </Text>
           </TouchableOpacity>
@@ -461,3 +318,127 @@ export default function Publish() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: getStatusBarHeight(true),
+    backgroundColor: '#ffffff',
+  },
+  content: {
+    paddingVertical: 16,
+  },
+  input: {
+    width: '100%',
+    height: 60,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    marginVertical: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  inputMultiline: {
+    height: 200,
+    textAlignVertical: 'top',
+  },
+  button: {
+    alignSelf: 'center',
+    width: '80%',
+    marginVertical: 24,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  buttonGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  err: { color: 'red', marginBottom: 8 },
+  imgBtn: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    marginVertical: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  imgPreview: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
+  },
+  imgText: { color: '#555' },
+  removeBtn: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  stepIndicator: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginVertical: 12,
+  },
+  stepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginHorizontal: 6,
+  },
+  stepDotActive: {
+    backgroundColor: '#5A40EA',
+  },
+  stepDotInactive: {
+    backgroundColor: '#ccc',
+  },
+  navButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 24,
+  },
+  navButtonsCenter: {
+    justifyContent: 'center',
+  },
+  navText: {
+    fontSize: 16,
+    color: '#5A40EA',
+    fontWeight: '600',
+  },
+  navTextDisabled: {
+    color: '#ccc',
+  },
+  stepContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+});
