@@ -11,6 +11,7 @@ import {
   Image,
   ImageBackground,
   ScrollView,
+  Alert,                        // ⬅️ NEW
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { getStatusBarHeight } from 'react-native-iphone-x-helper';
@@ -24,6 +25,7 @@ import {
   doc,
   getDoc,
   updateDoc,
+  deleteDoc,                   // ⬅️ NEW
 } from 'firebase/firestore';
 
 type App = {
@@ -51,11 +53,27 @@ type Job = {
   longitude?: number;
 };
 
+/* Traduce estados a algo más legible en la UI */
+const translateStatus = (s: string) => {
+  switch (s) {
+    case 'pending':
+      return 'Pendiente';
+    case 'accepted':
+      return 'Aceptada';
+    case 'denied':
+      return 'Rechazada';
+    case 'interview':
+      return 'Entrevista';
+    default:
+      return s;
+  }
+};
+
 export default function Matches() {
   const [apps, setApps] = useState<App[]>([]);
   const [selected, setSelected] = useState<App | null>(null);
-  const [loadingDetails, setLoadingDetails] = useState(false);
 
+  /* ---------- carga en tiempo real ---------- */
   useEffect(() => {
     const q = query(
       collection(db, 'applications'),
@@ -64,15 +82,12 @@ export default function Matches() {
     const unsub = onSnapshot(q, async (snap) => {
       const enriched = await Promise.all(
         snap.docs.map(async (d) => {
-          // datos básicos de la aplicación
           const data = d.data() as App;
 
-          // traigo TODO del job
           const jobSnap = await getDoc(doc(db, 'jobs', data.jobId));
           if (!jobSnap.exists()) return null;
           const job = jobSnap.data() as Job;
 
-          // parcheo título/desc (igual que antes) + seteo todos los campos extra
           const title = data.title || job.title;
           const description = data.description || job.description;
           const app: App = {
@@ -89,7 +104,6 @@ export default function Matches() {
             longitude: job.longitude,
           };
 
-          // actualizo solo title/description si faltaban
           if (!data.title || !data.description) {
             await updateDoc(d.ref, { title, description });
           }
@@ -97,20 +111,39 @@ export default function Matches() {
         })
       );
 
-      // filtro nulls por si alguno falló
       setApps(enriched.filter((a): a is App => !!a));
     });
     return () => unsub();
   }, []);
 
-  const openDetails = (app: App) => {
-    setSelected(app);
+  /* ---------- cancela (elimina) la postulación ---------- */
+  const handleCancel = (app: App) => {
+    Alert.alert(
+      'Cancelar postulación',
+      `¿Deseas cancelar tu postulación a "${app.title}"?`,
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Sí, cancelar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'applications', app.id));
+            } catch (err) {
+              console.error(err);
+              Alert.alert('Error', 'No se pudo cancelar la postulación.');
+            }
+          },
+        },
+      ]
+    );
   };
 
+  /* ---------- UI de la tarjeta ---------- */
   const renderApp = ({ item }: { item: App }) => (
     <TouchableOpacity
       style={s.cardWrapper}
-      onPress={() => openDetails(item)}
+      onPress={() => setSelected(item)}
       activeOpacity={0.8}
     >
       <ImageBackground
@@ -119,6 +152,19 @@ export default function Matches() {
         imageStyle={s.cardImage}
       >
         <View style={s.cardOverlay}>
+          <View style={s.cardHeader}>
+            <Text style={s.status}>{translateStatus(item.status)}</Text>
+
+            {/* Botón cancelar */}
+            <TouchableOpacity
+              onPress={() => handleCancel(item)}
+              style={s.cancelBtn}
+              hitSlop={8}
+            >
+              <Text style={s.cancelTxt}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+
           <Text style={s.title}>{item.title}</Text>
           <Text style={s.desc} numberOfLines={2}>
             {item.description}
@@ -131,6 +177,7 @@ export default function Matches() {
     </TouchableOpacity>
   );
 
+  /* ---------- render ---------- */
   return (
     <SafeAreaView style={s.container}>
       {apps.length === 0 ? (
@@ -146,7 +193,7 @@ export default function Matches() {
         />
       )}
 
-      {/* Modal Detalle */}
+      {/* ---------- Modal Detalle ---------- */}
       {selected && (
         <Modal transparent animationType="slide" visible>
           <View style={s.modalOverlay}>
@@ -160,10 +207,10 @@ export default function Matches() {
                 )}
                 <Text style={s.modalTitle}>{selected.title}</Text>
                 <Text style={s.detailText}>{selected.description}</Text>
+                <Text style={s.detailText}>Estado: {translateStatus(selected.status)}</Text>
                 <Text style={s.detailText}>Salario: {selected.pay}</Text>
-                <Text style={s.detailText}>
-                  Duración: {selected.duration}
-                </Text>
+                <Text style={s.detailText}>Duración: {selected.duration}</Text>
+
                 <View style={s.detailList}>
                   <Text style={s.detailText}>Requisitos:</Text>
                   {selected.requirements.map((r, i) => (
@@ -172,6 +219,7 @@ export default function Matches() {
                     </Text>
                   ))}
                 </View>
+
                 <MapView
                   style={s.detailMap}
                   initialRegion={{
@@ -188,6 +236,7 @@ export default function Matches() {
                     }}
                   />
                 </MapView>
+
                 <TouchableOpacity
                   onPress={() => setSelected(null)}
                   style={s.modalClose}
@@ -203,6 +252,7 @@ export default function Matches() {
   );
 }
 
+/* ---------- estilos ---------- */
 const s = StyleSheet.create({
   container: {
     flex: 1,
@@ -220,7 +270,7 @@ const s = StyleSheet.create({
     color: '#444',
   },
 
-  /* === Reutilizo exactamente tus estilos de MyJobs === */
+  /* === Tarjeta === */
   cardWrapper: {
     marginVertical: 8,
     borderRadius: 12,
@@ -229,7 +279,7 @@ const s = StyleSheet.create({
   },
   card: {
     width: '100%',
-    height: 180,
+    height: 190,
     justifyContent: 'flex-end',
   },
   cardImage: {
@@ -239,10 +289,36 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.4)',
     padding: 12,
   },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  status: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 6,
+  },
+  cancelBtn: {
+    backgroundColor: 'rgba(255, 64, 64, 0.9)',
+    borderRadius: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+  },
+  cancelTxt: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   title: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+    marginTop: 4,
   },
   desc: {
     color: '#eee',

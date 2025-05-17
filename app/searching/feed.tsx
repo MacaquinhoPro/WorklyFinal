@@ -5,11 +5,11 @@ import {
   Text,
   StyleSheet,
   Dimensions,
-  Alert,
   ActivityIndicator,
   TouchableOpacity,
   ImageBackground,
   Modal,
+  Animated,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import Swiper from 'react-native-deck-swiper';
@@ -47,8 +47,41 @@ export default function Feed() {
   const swiperRef = useRef<any>(null);
   const [mapJob, setMapJob] = useState<Job | null>(null);
 
+  /* ---------- flash global ---------- */
+  const flashOpacity = useRef(new Animated.Value(0)).current;
+  const [flashColor, setFlashColor] = useState<
+    'rgba(178, 255, 201, 0.45)' | 'rgba(255,91,91,0.45)' | null
+  >(null);
+
+  const triggerFlash = (type: 'green' | 'red') => {
+    const color =
+      type === 'green'
+        ? 'rgba(178, 255, 201, 0.45)'   // verde claro
+        : 'rgba(255,91,91,0.45)';    // rojo
+
+    setFlashColor(color);
+    flashOpacity.setValue(1); // completamente visible
+
+    // Desvanece la opacidad a 0 (pero sin desmontar todavía)
+    Animated.timing(flashOpacity, {
+      toValue: 0,
+      duration: 2000,
+      useNativeDriver: true,
+    }).start();
+
+    // Forzamos desmontar el color exactamente a los 2 segundos
+    setTimeout(() => {
+      setFlashColor(null);
+    }, 2000);
+  };
+
+
+
+
+
+  /* ---------- datos ---------- */
   const defaultRegion = {
-    latitude: 4.7110,
+    latitude: 4.711,
     longitude: -74.0721,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
@@ -56,8 +89,7 @@ export default function Feed() {
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'jobs'), (snap) => {
-      const arr = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-      setJobsRaw(arr);
+      setJobsRaw(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
       setLoading(false);
     });
     return () => unsub();
@@ -83,8 +115,7 @@ export default function Feed() {
 
   const apply = async (job: Job) => {
     try {
-      const appId = `${job.id}_${auth.currentUser!.uid}`;
-      await setDoc(doc(db, 'applications', appId), {
+      await setDoc(doc(db, 'applications', `${job.id}_${auth.currentUser!.uid}`), {
         jobId: job.id,
         userId: auth.currentUser!.uid,
         status: 'pending',
@@ -92,16 +123,10 @@ export default function Feed() {
         title: job.title,
         description: job.description,
       });
-      Alert.alert('¡Listo!', `Te postulaste a ${job.title}`);
-    } catch (e: any) {
-      Alert.alert('Error', e.message);
-    }
+    } catch {}
   };
 
-  const reject = (job: Job) => {
-    Alert.alert('Oferta descartada', `Descartaste ${job.title}`);
-  };
-
+  /* ---------- UI ---------- */
   if (loading) {
     return (
       <View style={s.center}>
@@ -122,6 +147,18 @@ export default function Feed() {
 
   return (
     <View style={s.container} key={cards.length}>
+      {/* Flash global */}
+      {flashColor && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFillObject,
+            { backgroundColor: flashColor, opacity: flashOpacity },
+          ]}
+        />
+      )}
+
+      {/* Swiper */}
       <Swiper
         ref={swiperRef}
         cards={cards}
@@ -133,24 +170,65 @@ export default function Feed() {
             onMapPress={() => setMapJob(job)}
           />
         )}
-        onSwipedRight={(i) => apply(cards[i])}
-        onSwipedLeft={(i) => reject(cards[i])}
+        onSwipedRight={(i) => {
+          apply(cards[i]);
+          triggerFlash('green');
+        }}
+        onSwipedLeft={() => triggerFlash('red')}
         disableLeftSwipe={!!mapJob}
         disableRightSwipe={!!mapJob}
         backgroundColor="transparent"
         stackSize={3}
         stackSeparation={15}
+        animateOverlayLabelsOpacity
+        overlayLabels={{
+          left: {
+            element: (
+              <View style={s.overlayIcon}>
+                <MaterialCommunityIcons
+                  name="close"
+                  size={160}
+                  color="#FF5B5B"
+                />
+              </View>
+            ),
+            style: { wrapper: s.overlayWrapperLeft },
+          },
+          right: {
+            element: (
+              <View style={s.overlayIcon}>
+                <MaterialCommunityIcons
+                  name="check"
+                  size={160}
+                  color="#4EFF82"
+                />
+              </View>
+            ),
+            style: { wrapper: s.overlayWrapperRight },
+          },
+        }}
       />
 
+      {/* Mapa */}
       {mapJob && (
-        <Modal transparent animationType="slide" visible onRequestClose={() => setMapJob(null)}>
+        <Modal
+          transparent
+          animationType="slide"
+          visible
+          onRequestClose={() => setMapJob(null)}
+        >
           <View style={s.modalOverlay}>
             <View style={s.mapContainer}>
               <MapView
                 style={StyleSheet.absoluteFill}
                 initialRegion={
                   mapJob.latitude && mapJob.longitude
-                    ? { ...mapJob as any, latitudeDelta: 0.05, longitudeDelta: 0.05 }
+                    ? {
+                        latitude: mapJob.latitude,
+                        longitude: mapJob.longitude,
+                        latitudeDelta: 0.05,
+                        longitudeDelta: 0.05,
+                      }
                     : defaultRegion
                 }
               >
@@ -161,8 +239,15 @@ export default function Feed() {
                   }}
                 />
               </MapView>
-              <TouchableOpacity style={s.mapClose} onPress={() => setMapJob(null)}>
-                <MaterialCommunityIcons name="close-circle" size={36} color="#fff" />
+              <TouchableOpacity
+                style={s.mapClose}
+                onPress={() => setMapJob(null)}
+              >
+                <MaterialCommunityIcons
+                  name="close-circle"
+                  size={36}
+                  color="#fff"
+                />
               </TouchableOpacity>
             </View>
           </View>
@@ -187,25 +272,44 @@ function Card({ job, onSwipeLeft, onSwipeRight, onMapPress }: any) {
         <View style={s.actionsOverlay}>
           {ICONS.map((icon, idx) => {
             const handler =
-              icon === 'heart' ? onSwipeRight : icon === 'close' ? onSwipeLeft : icon === 'map' ? onMapPress : () => {};
-            let color;
-            switch (icon) {
-              case 'rewind': color = '#F5B642'; break;
-              case 'close': color = '#FF5B5B'; break;
-              case 'star-outline': color = '#4D8EFF'; break;
-              case 'heart': color = '#4EFF82'; break;
-              default: color = '#C766FF';
-            }
+              icon === 'heart'
+                ? onSwipeRight
+                : icon === 'close'
+                ? onSwipeLeft
+                : icon === 'map'
+                ? onMapPress
+                : () => {};
+            const color =
+              icon === 'rewind'
+                ? '#F5B642'
+                : icon === 'close'
+                ? '#FF5B5B'
+                : icon === 'star-outline'
+                ? '#4D8EFF'
+                : icon === 'heart'
+                ? '#4EFF82'
+                : '#C766FF';
+
             return (
-              <TouchableOpacity key={idx} style={s.btnSmall} onPress={handler}>
-                <MaterialCommunityIcons name={icon as any} size={28} color={color} />
+              <TouchableOpacity
+                key={idx}
+                style={s.btnSmall}
+                onPress={handler}
+              >
+                <MaterialCommunityIcons
+                  name={icon as any}
+                  size={28}
+                  color={color}
+                />
               </TouchableOpacity>
             );
           })}
         </View>
+
         <TouchableOpacity style={s.infoBtn}>
           <MaterialCommunityIcons name="information" size={24} color="#fff" />
         </TouchableOpacity>
+
         <View style={s.details}>
           <Text style={s.name}>{job.title}</Text>
           <Text style={s.sub}>
@@ -217,13 +321,25 @@ function Card({ job, onSwipeLeft, onSwipeRight, onMapPress }: any) {
   );
 }
 
+/* ---------- estilos ---------- */
 const { width, height } = Dimensions.get('window');
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f2f2' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  finalText: { fontSize: 18, color: '#444', textAlign: 'center', paddingHorizontal: 32 },
-  cardWrapper: { width: width - 40, height: height * 0.75, alignSelf: 'center', marginTop: 20 },
+  finalText: {
+    fontSize: 18,
+    color: '#444',
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+  cardWrapper: {
+    width: width - 40,
+    height: height * 0.75,
+    alignSelf: 'center',
+    marginTop: 20,
+    overflow: 'visible', // permite que el overlay salga sin recorte
+  },
   card: { flex: 1, justifyContent: 'flex-end', position: 'relative' },
   cardImage: { flex: 1 },
   gradient: { ...StyleSheet.absoluteFillObject },
@@ -249,7 +365,54 @@ const s = StyleSheet.create({
     elevation: 5,
     zIndex: 20,
   },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  mapContainer: { width: width - 40, height: height * 0.6, borderRadius: 16, overflow: 'hidden' },
-  mapClose: { position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 18, padding: 4, zIndex: 20 },
+  /* --- iconos fuera de la tarjeta --- */
+  overlayWrapperLeft: {
+    position: 'absolute',
+    left: -width * 0.4,
+    width, // ancho para que el hijo no se recorte
+    top: 0,
+    bottom: 0,
+    overflow: 'visible',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingRight: 10,
+  },
+  overlayWrapperRight: {
+    position: 'absolute',
+    right: -width * 0.4,
+    width,
+    top: 0,
+    bottom: 0,
+    overflow: 'visible',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    paddingLeft: 10,
+  },
+  overlayIcon: {
+    pointerEvents: 'none',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  /* mapa */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapContainer: {
+    width: width - 40,
+    height: height * 0.6,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  mapClose: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 18,
+    padding: 4,
+    zIndex: 20,
+  },
 });
