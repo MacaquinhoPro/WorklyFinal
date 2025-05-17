@@ -46,7 +46,7 @@ export default function IAChatScreen() {
     try {
       setIsLoading(true);
 
-      const promptferxxo = `Respondeme como si fueras un coach laboral, que únicamente responde preguntas acerca de trabajo. Si preguntan algo que no tenga relación, responde: "Soy una IA diseñada para ayudarte con preguntas laborales, no puedo responder a tu pregunta".\n\n${originalPrompt}`;
+      const promptWorkly = `Respondeme como si fueras un coach laboral, que únicamente responde preguntas acerca de trabajo. Si preguntan algo que no tenga relación, responde: "Soy una IA diseñada para ayudarte con preguntas laborales, no puedo responder a tu pregunta".\n\n${originalPrompt}`;
       const endpoint =
         'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyC3CGhhZXZ1TwFNK6aCb4xlg0ARfgBv96Q';
 
@@ -54,7 +54,7 @@ export default function IAChatScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: promptferxxo }] }],
+          contents: [{ parts: [{ text: promptWorkly }] }],
         }),
       });
 
@@ -120,7 +120,7 @@ export default function IAChatScreen() {
         {messages.length === 0 && (
           <View style={styles.welcomeOverlay} pointerEvents="none">
             <Markdown style={mdStylesAI}>
-              Bienvenido, soy una IA para ayudarte a organizar tus ideas
+              Bienvenido, soy una IA para ayudarte a organizar tus ideas laborales
             </Markdown>
           </View>
         )}
