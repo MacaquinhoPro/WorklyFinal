@@ -25,7 +25,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../utils/firebaseconfig';
 
-const ICONS = ['rewind', 'close', 'star-outline', 'heart', 'map'];
+const ICONS = ['close', 'heart', 'map'];
 
 type Job = {
   id: string;
@@ -280,15 +280,11 @@ function Card({ job, onSwipeLeft, onSwipeRight, onMapPress }: any) {
                 ? onMapPress
                 : () => {};
             const color =
-              icon === 'rewind'
-                ? '#F5B642'
-                : icon === 'close'
-                ? '#FF5B5B'
-                : icon === 'star-outline'
-                ? '#4D8EFF'
-                : icon === 'heart'
-                ? '#4EFF82'
-                : '#C766FF';
+            icon === 'close'
+              ? '#FF5B5B'
+              : icon === 'heart'
+              ? '#4EFF82'
+              : '#C766FF'; // map button
 
             return (
               <TouchableOpacity
