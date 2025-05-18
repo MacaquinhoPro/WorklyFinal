@@ -40,6 +40,7 @@ type App = {
   imageUrl: string;
   latitude?: number;
   longitude?: number;
+  interviewAt?: number;   // ← NEW
 };
 
 type Job = {
@@ -52,6 +53,9 @@ type Job = {
   latitude?: number;
   longitude?: number;
 };
+
+const fmt = (ts?: number) =>
+  ts ? new Date(ts).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
 
 /* Traduce estados a algo más legible en la UI */
 const translateStatus = (s: string) => {
@@ -102,6 +106,7 @@ export default function Matches() {
             imageUrl: job.imageUrl,
             latitude: job.latitude,
             longitude: job.longitude,
+            interviewAt: (data as any).interviewAt ?? null,   // ← NEW
           };
 
           if (!data.title || !data.description) {
@@ -172,6 +177,9 @@ export default function Matches() {
           <Text style={s.subtitle}>
             {item.duration} • {item.pay}
           </Text>
+          {item.interviewAt && (
+            <Text style={s.desc}>Entrevista: {fmt(item.interviewAt)}</Text>
+          )}
         </View>
       </ImageBackground>
     </TouchableOpacity>
@@ -210,6 +218,11 @@ export default function Matches() {
                 <Text style={s.detailText}>Estado: {translateStatus(selected.status)}</Text>
                 <Text style={s.detailText}>Salario: {selected.pay}</Text>
                 <Text style={s.detailText}>Duración: {selected.duration}</Text>
+                {selected.interviewAt && (
+                  <Text style={s.detailText}>
+                    Entrevista: {fmt(selected.interviewAt)}
+                  </Text>
+                )}
 
                 <View style={s.detailList}>
                   <Text style={s.detailText}>Requisitos:</Text>
@@ -335,12 +348,12 @@ const s = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
+    paddingTop: getStatusBarHeight(true) + 40, 
     alignItems: 'center',
   },
   modalBox: {
-    width: '85%',
-    maxHeight: '90%',
+    width: '88%',
+    maxHeight: '88%',
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,

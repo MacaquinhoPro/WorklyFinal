@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Markdown from 'react-native-markdown-display';   // ← NUEVO
 
@@ -100,20 +101,34 @@ export default function IAChatScreen() {
           data={messages}
           keyExtractor={(_, i) => i.toString()}
           contentContainerStyle={[styles.chatContainer, { paddingTop: 8 }]}
-          renderItem={({ item }) => (
-            <View
-              style={[
-                styles.bubble,
-                item.sender_by === 'User' ? styles.userBubble : styles.aiBubble,
-              ]}
-            >
+          renderItem={({ item }) => {
+            const bubbleContent = (
               <Markdown
                 style={item.sender_by === 'User' ? mdStylesUser : mdStylesAI}
               >
                 {item.text}
               </Markdown>
-            </View>
-          )}
+            );
+
+            if (item.sender_by === 'User') {
+              return (
+                <LinearGradient
+                  colors={['#5A40EA', '#EE805F']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.bubble, styles.userBubble]}
+                >
+                  {bubbleContent}
+                </LinearGradient>
+              );
+            }
+
+            return (
+              <View style={[styles.bubble, styles.aiBubble]}>
+                {bubbleContent}
+              </View>
+            );
+          }}
         />
 
         {/* -------- cartel de bienvenida -------- */}
@@ -134,16 +149,19 @@ export default function IAChatScreen() {
             placeholder="Escribe un mensaje..."
             editable={!isLoading}
           />
-          <TouchableOpacity
-            onPress={handleSend}
-            style={[styles.sendBtn, isLoading && styles.sendBtnDisabled]}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <MaterialIcons name="send" size={24} color="#FFF" />
-            )}
+          <TouchableOpacity onPress={handleSend} disabled={isLoading}>
+            <LinearGradient
+              colors={['#5A40EA', '#EE805F']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.sendBtn, isLoading && styles.sendBtnDisabled]}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <MaterialIcons name="send" size={24} color="#FFF" />
+              )}
+            </LinearGradient>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -172,7 +190,6 @@ const styles = StyleSheet.create({
   },
   userBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: '#5A40EA',
   },
   aiBubble: {
     alignSelf: 'flex-start',
@@ -197,7 +214,6 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   sendBtn: {
-    backgroundColor: '#5A40EA',
     width: 40,
     height: 40,
     borderRadius: 20,

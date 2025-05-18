@@ -4,7 +4,9 @@ import {
   StyleSheet, Dimensions, Platform, TextInput, Modal, Alert,
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { auth, db, storage } from '../utils/firebaseconfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
@@ -21,6 +23,15 @@ export default function ProfileScreen() {
   const [photoURL, setPhotoURL] = useState(
     user.photoURL || 'https://via.placeholder.com/300'
   );
+  const [cvURL, setCvURL] = useState('');
+  const CARDS = [
+    'Algoritmo que filtra vacantes reales',
+    'Postúlate con un toque',
+    'IA que mejora tu CV',
+    'Empleadores verificados',
+    'Soporte 24/7',
+  ];
+  const [carouselIndex, setCarouselIndex] = useState(0);
 
   /* ── cargar Firestore ── */
   useEffect(() => {
@@ -31,9 +42,32 @@ export default function ProfileScreen() {
         setDescription(d.description || '');
         setDisplayNameState(d.displayName || user.displayName || 'User');
         if (d.photoURL) setPhotoURL(d.photoURL);
+        if (d.cvURL) setCvURL(d.cvURL);
       }
     })();
   }, []);
+  const uploadCV = async () => {
+    const res = await DocumentPicker.getDocumentAsync({
+      type: 'application/pdf',
+      copyToCacheDirectory: true,
+    });
+    if (res.canceled || !res.assets?.length) return;
+    try {
+      const uri = res.assets[0].uri;
+      const blob = await (await fetch(uri)).blob();
+      const fileRef = ref(storage, `cvs/${user.uid}_${Date.now()}.pdf`);
+      const task = uploadBytesResumable(fileRef, blob, {
+        contentType: 'application/pdf',
+      });
+      await task;
+      const downloadURL = await getDownloadURL(fileRef);
+      await updateDoc(doc(db, 'users', user.uid), { cvURL: downloadURL });
+      setCvURL(downloadURL);
+      Alert.alert('CV subido', 'Tu hoja de vida se ha actualizado.');
+    } catch (e: any) {
+      Alert.alert('Error', e.code ?? e.message ?? 'No se pudo subir el CV');
+    }
+  };
 
   /* ── cambiar foto ── */
   const changePhoto = async () => {
@@ -138,13 +172,63 @@ export default function ProfileScreen() {
         <Text style={s.name}>{displayNameState}</Text>
         <Text style={s.description}>{description}</Text>
 
-        <View style={[s.actionsRow, { justifyContent: 'center' }]}>
+        <View style={[s.actionsRow, { justifyContent: 'space-evenly' }]}>
           <View style={s.actionItemCenter}>
             <TouchableOpacity style={s.editButton} onPress={() => setEditing(true)}>
               <MaterialCommunityIcons name="pencil-outline" size={32} color="#000" />
               <View style={s.dotRed} />
             </TouchableOpacity>
             <Text style={s.actionLabel}>EDITAR PERFIL</Text>
+          </View>
+          <View style={s.actionItemCenter}>
+            <TouchableOpacity style={s.editButton} onPress={uploadCV}>
+              <MaterialCommunityIcons name="file-upload-outline" size={32} color="#000" />
+              {!cvURL && <View style={s.dotRed} />}
+            </TouchableOpacity>
+            <Text style={s.actionLabel}>SUBIR CV</Text>
+          </View>
+        </View>
+
+        {/* ── Por qué elegir Workly ── */}
+        <Text style={s.benefitsTitle}>¿Por qué elegir Workly?</Text>
+        {/* ── Carrusel de ventajas ── */}
+        <View style={s.carouselContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            pagingEnabled
+            snapToInterval={width}            // full slide width (card + margins)
+            snapToAlignment="center"
+            contentContainerStyle={{}}
+            decelerationRate="fast"
+            onMomentumScrollEnd={e => {
+              const pageWidth = width; // match snapToInterval
+              const idx = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
+              setCarouselIndex(idx);
+            }}
+          >
+            {CARDS.map((txt, i) => (
+              <LinearGradient
+                key={i}
+                colors={['#5A40EA', '#EE805F']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={s.carouselCard}
+              >
+                <Text style={s.carouselText}>{txt}</Text>
+              </LinearGradient>
+            ))}
+          </ScrollView>
+          <View style={s.dotsRow}>
+            {CARDS.map((_, i) => (
+              <View
+                key={i}
+                style={[
+                  s.dot,
+                  i === carouselIndex && s.dotActive,
+                ]}
+              />
+            ))}
           </View>
         </View>
       </ScrollView>
@@ -198,4 +282,49 @@ const s = StyleSheet.create({
     borderRadius: 6, marginLeft: 8,
   },
   saveText: { color: '#FFF', fontSize: 14 },
+  carouselContainer: {
+    marginTop: 16,
+    width: '100%',
+    height: 110,
+    overflow: 'visible',
+  },
+  carouselCard: {
+    width: width - 40, // full‑width card with side padding
+    height: 100,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    elevation: 4,
+  },
+  carouselText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingHorizontal: 12,
+  },
+  benefitsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 10,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 0, // bajamos un poco los puntos
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#DDD',
+    marginHorizontal: 4,
+  },
+  dotActive: {
+    backgroundColor: '#5A40EA',
+  },
 });

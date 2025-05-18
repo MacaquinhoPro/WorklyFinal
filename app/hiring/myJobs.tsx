@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   View,
   Text,
@@ -17,8 +18,11 @@ import {
   StyleProp,
   TextStyle,
   SafeAreaView,
+  Animated,
+  Platform,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { getStatusBarHeight } from 'react-native-iphone-x-helper';
 import { db, auth } from '../utils/firebaseconfig';
@@ -66,6 +70,40 @@ export default function MyJobs() {
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
   const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
+
+  const [scheduleModal, setScheduleModal] = useState<{ visible: boolean; app: Applicant | null; date: string; time: string }>({
+    visible: false,
+    app: null,
+    date: '',
+    time: '',
+  });
+  const [schedulerActive, setSchedulerActive] = useState(false);
+  const [picker, setPicker] = useState<{ visible: boolean; mode: 'date' | 'time' }>({
+    visible: false,
+    mode: 'date',
+  });
+
+  // feedback banner
+  const [feedback, setFeedback] = useState<{ visible: boolean; text: string; color: string | string[] }>({
+    visible: false,
+    text: '',
+    color: '#66bb6a',
+  });
+  const feedbackOpacity = useRef(new Animated.Value(0)).current;
+
+  const showFeedback = (message: string, color: string | string[]) => {
+    setFeedback({ visible: true, text: message, color });
+    feedbackOpacity.setValue(0);
+    Animated.timing(feedbackOpacity, { toValue: 1, duration: 300, useNativeDriver: true }).start(
+      () => {
+        setTimeout(() => {
+          Animated.timing(feedbackOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(
+            () => setFeedback(f => ({ ...f, visible: false }))
+          );
+        }, 1500);
+      }
+    );
+  };
 
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [editFields, setEditFields] = useState({
@@ -119,12 +157,42 @@ export default function MyJobs() {
         name: data.name,
         experienceYears: data.experienceYears ?? null,
         email: data.email,
-        photoURL: data.photoURL,
+        photoURL: data.photoURL || data.photoUrl || data.profileUrl || '',
         description: data.descriptionUser || data.description || '',
         resumeURL: data.resumeURL || '',
       } as Applicant;
     });
-    setApplicants(apps);
+    // ---- If an applicant record lacks photoURL, fetch it from the users collection ----
+    const enriched = await Promise.all(
+      apps.map(async a => {
+        if (a.photoURL) return a;
+        try {
+          // First try: document ID == userId
+          let userSnap = await getDoc(doc(db, 'users', a.userId));
+          if (!userSnap.exists()) {
+            // Second try: look for a document where field uid == userId
+            const qsUser = await getDocs(
+              query(collection(db, 'users'), where('uid', '==', a.userId))
+            );
+            if (!qsUser.empty) {
+              userSnap = qsUser.docs[0];
+            }
+          }
+          if (userSnap.exists()) {
+            const u = userSnap.data() as any;
+            return {
+              ...a,
+              photoURL: u.photoURL || u.photoUrl || u.profileUrl || '',
+              description: a.description || u.description || '',
+            };
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        return a;
+      })
+    );
+    setApplicants(enriched);
     setLoadingApplicants(false);
   };
 
@@ -135,7 +203,37 @@ export default function MyJobs() {
       setApplicants(prev =>
         prev.map(a => (a.appId === app.appId ? { ...a, status } : a))
       );
-      setSelectedApplicant(null);
+      setTimeout(() => setSelectedApplicant(null), 1200);
+      showFeedback(
+        status === 'rejected' ? 'Postulante rechazado' : 'Postulante marcado para entrevista',
+        status === 'rejected' ? '#e53935' : ['#5A40EA', '#EE805F']
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  const scheduleInterview = async () => {
+    if (!scheduleModal.app || !scheduleModal.date || !scheduleModal.time) {
+      Alert.alert('Completa fecha y hora');
+      return;
+    }
+    const timestamp = new Date(`${scheduleModal.date}T${scheduleModal.time}:00`).getTime();
+    try {
+      await updateDoc(doc(db, 'applications', scheduleModal.app.appId), {
+        status: 'waiting',
+        interviewAt: timestamp,
+      });
+      setApplicants(prev =>
+        prev.map(a =>
+          a.appId === scheduleModal.app!.appId
+            ? { ...a, status: 'waiting' }
+            : a
+        )
+      );
+      setScheduleModal({ visible: false, app: null, date: '', time: '' });
+      setTimeout(() => setSelectedApplicant(null), 1200);
+      showFeedback('Postulante marcado para entrevista', ['#5A40EA', '#EE805F']);
     } catch (e: any) {
       Alert.alert('Error', e.message);
     }
@@ -202,14 +300,60 @@ export default function MyJobs() {
     </TouchableOpacity>
   );
 
-  /* ───── render postulante ─────────────────────────── */
+  // ==== Job detail header used by the applicants list ====
+  const JobDetailHeader = () => {
+    if (!selectedJob) return null;
+    return (
+      <>
+        {selectedJob.imageUrl && (
+          <Image
+            source={{ uri: selectedJob.imageUrl }}
+            style={s.detailImage}
+          />
+        )}
+        <Text style={s.modalTitle}>{selectedJob.title}</Text>
+        <Text style={s.detailDescription}>{selectedJob.description}</Text>
+        <Text style={s.detailText}>Salario: {selectedJob.pay}</Text>
+        <Text style={s.detailText}>Duración: {selectedJob.duration}</Text>
+        <View style={s.detailList}>
+          <Text style={s.detailText}>Requisitos:</Text>
+          {selectedJob.requirements.map((r, i) => (
+            <Text key={i} style={s.detailText}>• {r}</Text>
+          ))}
+        </View>
+        <MapView
+          style={s.detailMap}
+          pointerEvents="none"
+          initialRegion={{
+            latitude: selectedJob.latitude ?? 4.711,
+            longitude: selectedJob.longitude ?? -74.0721,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          }}
+        >
+          <Marker
+            coordinate={{
+              latitude: selectedJob.latitude ?? 4.711,
+              longitude: selectedJob.longitude ?? -74.0721,
+            }}
+          />
+        </MapView>
+        <Text style={[s.modalTitle, { marginTop: 12 }]}>Postulantes</Text>
+      </>
+    );
+  };
+
   const renderApplicant = ({ item }: { item: Applicant }) => (
-    <TouchableOpacity
-      style={s.appItem}
-      onPress={() => setSelectedApplicant(item)}
-    >
-      <Text style={s.appName}>{item.name}</Text>
-      <Text style={s.appemail}>{item.email}</Text>
+    <TouchableOpacity style={s.appItem} onPress={() => setSelectedApplicant(item)}>
+      {item.photoURL ? (
+        <Image source={{ uri: item.photoURL }} style={s.appAvatar} />
+      ) : (
+        <Ionicons name="person-circle" size={48} color="#bbb" style={s.appAvatar} />
+      )}
+      <View style={{ flex: 1 }}>
+        <Text style={s.appName}>{item.name}</Text>
+        <Text style={s.appemail}>{item.email}</Text>
+      </View>
       <Text style={badgeStyle(item.status)}>{item.status.toUpperCase()}</Text>
     </TouchableOpacity>
   );
@@ -237,42 +381,34 @@ export default function MyJobs() {
           <TouchableOpacity style={s.backButton} onPress={() => setSelectedJob(null)}>
             <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>
+          {feedback.visible && (
+            <Animated.View
+              pointerEvents="none"
+              style={[s.feedbackInModal, { opacity: feedbackOpacity }]}
+            >
+              {Array.isArray(feedback.color) ? (
+                <LinearGradient
+                  colors={feedback.color as [string, string, ...string[]]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[StyleSheet.absoluteFill, { borderRadius: 20 }]}
+                />
+              ) : (
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: feedback.color as string, borderRadius: 20 }]} />
+              )}
+              <Text style={s.feedbackText}>{feedback.text}</Text>
+            </Animated.View>
+          )}
           <View style={s.modalContent}>
             {selectedJob && (
-              <>
-                <Text style={s.modalTitle}>{selectedJob.title}</Text>
-                <Text style={s.detailDescription}>{selectedJob.description}</Text>
-                <Text style={s.detailText}>Salario: {selectedJob.pay}</Text>
-                <Text style={s.detailText}>Duración: {selectedJob.duration}</Text>
-                <View style={s.detailList}>
-                  <Text style={s.detailText}>Requisitos:</Text>
-                  {selectedJob.requirements.map((r, i) => (
-                    <Text key={i} style={s.detailText}>• {r}</Text>
-                  ))}
-                </View>
-                <MapView
-                  style={s.detailMap}
-                  initialRegion={{
-                    latitude: selectedJob.latitude ?? 4.7110,
-                    longitude: selectedJob.longitude ?? -74.0721,
-                    latitudeDelta: 0.05,
-                    longitudeDelta: 0.05,
-                  }}
-                >
-                  <Marker
-                    coordinate={{
-                      latitude: selectedJob.latitude ?? 4.7110,
-                      longitude: selectedJob.longitude ?? -74.0721,
-                    }}
-                  />
-                </MapView>
-
-                {loadingApplicants ? (
-                  <ActivityIndicator size="large" />
-                ) : selectedApplicant ? (
-                  <ScrollView contentContainerStyle={{ padding: 20 }}>
-                    {selectedApplicant.photoURL && (
+              selectedApplicant ? (
+                /* ===== DETAIL OF ONE APPLICANT ===== */
+                <ScrollView contentContainerStyle={{ padding: 20 }}>
+                  <View style={s.appDetailCard}>
+                    {selectedApplicant.photoURL ? (
                       <Image source={{ uri: selectedApplicant.photoURL }} style={s.appPhoto} />
+                    ) : (
+                      <Ionicons name="person-circle" size={180} color="#bbb" style={s.appPhoto} />
                     )}
                     <Text style={s.detailName}>{selectedApplicant.name}</Text>
                     <Text style={s.detailText}>Correo: {selectedApplicant.email}</Text>
@@ -289,32 +425,100 @@ export default function MyJobs() {
                     ) : (
                       <Text style={s.detailText}>Sin hoja de vida</Text>
                     )}
-                    <View style={s.detailButtons}>
-                      <Button
-                        title="Rechazar"
-                        color="#e53935"
-                        onPress={() => changeStatus(selectedApplicant, 'rejected')}
-                      />
-                      <Button
-                        title="Entrevista"
-                        color="#fb8c00"
-                        onPress={() => changeStatus(selectedApplicant, 'waiting')}
-                      />
-                    </View>
+                    <View style={s.divider} />
+                    {schedulerActive ? (
+                      <>
+                        <TouchableOpacity
+                          style={s.input}
+                          onPress={() => setPicker({ visible: true, mode: 'date' })}
+                        >
+                          <Text style={{ color: scheduleModal.date ? '#000' : '#888' }}>
+                            {scheduleModal.date || 'Elegir fecha'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={s.input}
+                          onPress={() => setPicker({ visible: true, mode: 'time' })}
+                        >
+                          <Text style={{ color: scheduleModal.time ? '#000' : '#888' }}>
+                            {scheduleModal.time || 'Elegir hora'}
+                          </Text>
+                        </TouchableOpacity>
+                        <View style={s.detailButtons}>
+                          <Button title="Cancelar" onPress={() => setSchedulerActive(false)} />
+                          <Button title="Guardar" onPress={scheduleInterview} />
+                        </View>
+                      </>
+                    ) : (
+                      <View style={s.detailButtons}>
+                        <Button
+                          title="Rechazar"
+                          color="#e53935"
+                          onPress={() => changeStatus(selectedApplicant, 'rejected')}
+                        />
+                        <Button
+                          title="Entrevista"
+                          color="#fb8c00"
+                          onPress={() => {
+                            setSchedulerActive(true);
+                            setScheduleModal({ visible: false, app: selectedApplicant, date: new Date().toISOString().split('T')[0], time: '' });
+                          }}
+                        />
+                      </View>
+                    )}
                     <Button title="Volver a lista" onPress={() => setSelectedApplicant(null)} />
-                  </ScrollView>
-                ) : applicants.length === 0 ? (
-                  <Text style={s.detailText}>No hay postulantes</Text>
-                ) : (
-                  <FlatList
-                    data={applicants}
-                    keyExtractor={a => a.appId}
-                    renderItem={renderApplicant}
-                  />
-                )}
-              </>
+                  </View>
+                </ScrollView>
+              ) : loadingApplicants ? (
+                <ActivityIndicator size="large" style={{ marginTop: 40 }} />
+              ) : (
+                /* ===== JOB DETAILS + APPLICANTS IN ONE LIST ===== */
+                <FlatList
+                  data={applicants}
+                  keyExtractor={a => a.appId}
+                  renderItem={renderApplicant}
+                  ListHeaderComponent={JobDetailHeader}
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ paddingBottom: 24 }}
+                />
+              )
             )}
           </View>
+        {/* Inline DateTimePicker for scheduler */}
+        {picker.visible && (
+          <DateTimePicker
+            value={new Date()}
+            mode={picker.mode}
+            display={
+              Platform.OS === 'ios'
+                ? picker.mode === 'date'
+                  ? 'inline'
+                  : 'spinner'
+                : 'default'
+            }
+            style={
+              Platform.OS === 'ios'
+                ? { width: '60%', height: 100, transform: [{ scale: 0.8 }], alignSelf: 'center' }
+                : { width: '60%', transform: [{ scale: 0.9 }], alignSelf: 'center' }
+            }
+            onChange={(_, selected) => {
+              if (!selected) {
+                setPicker({ ...picker, visible: false });
+                return;
+              }
+              if (picker.mode === 'date') {
+                const dStr = selected.toISOString().split('T')[0];
+                setScheduleModal(prev => ({ ...prev, date: dStr }));
+                setPicker({ visible: false, mode: 'time' }); // next pick time
+              } else {
+                const hh = String(selected.getHours()).padStart(2, '0');
+                const mm = String(selected.getMinutes()).padStart(2, '0');
+                setScheduleModal(prev => ({ ...prev, time: `${hh}:${mm}` }));
+                setPicker({ visible: false, mode: 'date' });
+              }
+            }}
+          />
+        )}
         </SafeAreaView>
       </Modal>
 
@@ -381,6 +585,7 @@ const s = StyleSheet.create({
   },
   cardWrapper: {
     marginVertical: 8,
+    marginHorizontal: 8,
     borderRadius: 12,
     overflow: 'hidden',
     elevation: 3,
@@ -432,7 +637,7 @@ const s = StyleSheet.create({
   modalContent: {
     flex: 1,
     backgroundColor: '#fff',
-    marginTop: 80,
+    marginTop: getStatusBarHeight(true) + 8,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 16,
@@ -464,6 +669,12 @@ const s = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 16,
   },
+  detailImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
   detailName: {
     fontSize: 20,
     fontWeight: '600',
@@ -476,11 +687,28 @@ const s = StyleSheet.create({
     marginVertical: 20,
   },
   appPhoto: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
     alignSelf: 'center',
     marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#ddd',
+  },
+  appDetailCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 24,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  divider: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    marginVertical: 16,
   },
   editOverlay: {
     flex: 1,
@@ -501,11 +729,21 @@ const s = StyleSheet.create({
     borderRadius: 8,
     padding: 10,
     marginBottom: 12,
+    justifyContent: 'center',
   },
   appItem: {
-    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
+  },
+  appAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 12,
   },
   appName: {
     fontSize: 16,
@@ -515,6 +753,54 @@ const s = StyleSheet.create({
   appemail: {
     fontSize: 14,
     color: '#333',
+  },
+  feedbackAbsolute: {
+    position: 'absolute',
+    top: getStatusBarHeight(true) + 60,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    borderRadius: 20,
+    marginHorizontal: 32,
+    paddingVertical: 10,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  feedbackText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  feedbackInModal: {
+    position: 'absolute',
+    top: getStatusBarHeight(true) + 60,
+    left: 20,
+    right: 20,
+    borderRadius: 20,
+    paddingVertical: 10,
+    alignItems: 'center',
+    elevation: 4,
+    zIndex: 50,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  scheduleBox: {
+    width: '90%',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 
