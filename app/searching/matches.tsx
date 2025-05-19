@@ -7,11 +7,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
-  ActivityIndicator,
   Image,
   ImageBackground,
   ScrollView,
-  Alert,                        // ⬅️ NEW
+  Alert,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { getStatusBarHeight } from 'react-native-iphone-x-helper';
@@ -25,15 +26,15 @@ import {
   doc,
   getDoc,
   updateDoc,
-  deleteDoc,                   // ⬅️ NEW
+  deleteDoc,
 } from 'firebase/firestore';
-
 import * as Notifications from 'expo-notifications';
 
+/* ---------- tipos ---------- */
 type App = {
   id: string;
   jobId: string;
-  status: string;
+  status: 'pending' | 'accepted' | 'denied' | 'interview';
   title: string;
   description: string;
   pay: string;
@@ -42,7 +43,7 @@ type App = {
   imageUrl: string;
   latitude?: number;
   longitude?: number;
-  interviewAt?: number;   // ← NEW
+  interviewAt?: number | null;      // ← fecha/hora de entrevista (epoch ms)
 };
 
 type Job = {
@@ -56,10 +57,15 @@ type Job = {
   longitude?: number;
 };
 
+/* ---------- utilidades ---------- */
 const fmt = (ts?: number) =>
-  ts ? new Date(ts).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  ts
+    ? new Date(ts).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })
+    : '';
 
-/* Traduce estados a algo más legible en la UI */
 const translateStatus = (s: string) => {
   switch (s) {
     case 'pending':
@@ -75,21 +81,42 @@ const translateStatus = (s: string) => {
   }
 };
 
+/* ============================================================ */
 export default function Matches() {
-  // ---- notificaciones ----
-  const notifiedRef = useRef<Set<string>>(new Set());
+  /* ---------- notificaciones ---------- */
+  // ids de notificaciones ya programadas por app.id
+  const notifIdsRef = useRef<Record<string, string>>({});
 
-  // Solicitar permiso al iniciar el componente
+  // Handler global (muestra alerta + sonido)
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+
+  // Crear canal para Android una sola vez
   useEffect(() => {
     (async () => {
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('interviews', {
+          name: 'Entrevistas',
+          importance: Notifications.AndroidImportance.DEFAULT,
+          sound: 'default',
+        });
+      }
       const { status } = await Notifications.requestPermissionsAsync();
       if (status !== 'granted') {
         console.warn('Permiso de notificaciones no concedido');
       }
     })();
   }, []);
+
+  /* ---------- estado ---------- */
   const [apps, setApps] = useState<App[]>([]);
   const [selected, setSelected] = useState<App | null>(null);
+  const [loading, setLoading] = useState(true);
 
   /* ---------- carga en tiempo real ---------- */
   useEffect(() => {
@@ -102,13 +129,19 @@ export default function Matches() {
         snap.docs.map(async (d) => {
           const data = d.data() as App;
 
+          // consultar datos del trabajo
           const jobSnap = await getDoc(doc(db, 'jobs', data.jobId));
           if (!jobSnap.exists()) return null;
           const job = jobSnap.data() as Job;
 
+          // asegurar que siempre tengamos título/descrición guardados
           const title = data.title || job.title;
           const description = data.description || job.description;
-          const app: App = {
+          if (!data.title || !data.description) {
+            await updateDoc(d.ref, { title, description });
+          }
+
+          return {
             id: d.id,
             jobId: data.jobId,
             status: data.status,
@@ -120,39 +153,58 @@ export default function Matches() {
             imageUrl: job.imageUrl,
             latitude: job.latitude,
             longitude: job.longitude,
-            interviewAt: (data as any).interviewAt ?? null,   // ← NEW
-          };
-
-          if (!data.title || !data.description) {
-            await updateDoc(d.ref, { title, description });
-          }
-          return app;
+            interviewAt: (data as any).interviewAt ?? null,
+          } as App;
         })
       );
 
       setApps(enriched.filter((a): a is App => !!a));
+      setLoading(false);
     });
     return () => unsub();
   }, []);
 
-  /* ---------- programa notificación de entrevista ---------- */
+  /* ---------- programa / cancela notificaciones ---------- */
   useEffect(() => {
-    apps.forEach(async (app) => {
-      if (app.interviewAt && !notifiedRef.current.has(app.id)) {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: 'Nueva entrevista',
-            body: 'Tienes una nueva entrevista',
-            sound: 'default',
-          },
-          trigger: null, // null => enviar inmediatamente
-        });
-        notifiedRef.current.add(app.id);
+    (async () => {
+      for (const app of apps) {
+        const storedId = notifIdsRef.current[app.id];
+
+        // 1) Si hay entrevista futura y no está programada → programar
+        if (
+          app.interviewAt &&
+          app.interviewAt > Date.now() &&
+          !storedId
+        ) {
+          const notifId = await Notifications.scheduleNotificationAsync({
+            content: {
+              title: 'Entrevista programada',
+              body: `Entrevista para "${app.title}" a las ${fmt(
+                app.interviewAt
+              )}`,
+              sound: 'default',
+            },
+            trigger: {
+              channelId: 'interviews',
+              date: new Date(app.interviewAt),
+            } as any,
+          });
+          notifIdsRef.current[app.id] = notifId;
+        }
+
+        // 2) Si ya no hay entrevista o está en pasado → cancelar y limpiar
+        if (
+          (!app.interviewAt || app.interviewAt <= Date.now()) &&
+          storedId
+        ) {
+          await Notifications.cancelScheduledNotificationAsync(storedId);
+          delete notifIdsRef.current[app.id];
+        }
       }
-    });
+    })();
   }, [apps]);
 
-  /* ---------- cancela (elimina) la postulación ---------- */
+  /* ---------- cancelar postulación ---------- */
   const handleCancel = (app: App) => {
     Alert.alert(
       'Cancelar postulación',
@@ -164,6 +216,14 @@ export default function Matches() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // cancelar notificación pendiente (si la hay)
+              const storedId = notifIdsRef.current[app.id];
+              if (storedId) {
+                await Notifications.cancelScheduledNotificationAsync(
+                  storedId
+                );
+                delete notifIdsRef.current[app.id];
+              }
               await deleteDoc(doc(db, 'applications', app.id));
             } catch (err) {
               console.error(err);
@@ -175,7 +235,7 @@ export default function Matches() {
     );
   };
 
-  /* ---------- UI de la tarjeta ---------- */
+  /* ---------- render tarjeta ---------- */
   const renderApp = ({ item }: { item: App }) => (
     <TouchableOpacity
       style={s.cardWrapper}
@@ -216,7 +276,15 @@ export default function Matches() {
     </TouchableOpacity>
   );
 
-  /* ---------- render ---------- */
+  /* ---------- render principal ---------- */
+  if (loading) {
+    return (
+      <View style={s.loading}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={s.container}>
       {apps.length === 0 ? (
@@ -246,7 +314,9 @@ export default function Matches() {
                 )}
                 <Text style={s.modalTitle}>{selected.title}</Text>
                 <Text style={s.detailText}>{selected.description}</Text>
-                <Text style={s.detailText}>Estado: {translateStatus(selected.status)}</Text>
+                <Text style={s.detailText}>
+                  Estado: {translateStatus(selected.status)}
+                </Text>
                 <Text style={s.detailText}>Salario: {selected.pay}</Text>
                 <Text style={s.detailText}>Duración: {selected.duration}</Text>
                 {selected.interviewAt && (
@@ -304,6 +374,11 @@ const s = StyleSheet.create({
     paddingTop: getStatusBarHeight(true),
     paddingHorizontal: 16,
   },
+  loading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   noJobsContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -313,8 +388,7 @@ const s = StyleSheet.create({
     fontSize: 18,
     color: '#444',
   },
-
-  /* === Tarjeta === */
+  /* --- Tarjeta --- */
   cardWrapper: {
     marginVertical: 8,
     borderRadius: 12,
@@ -374,12 +448,11 @@ const s = StyleSheet.create({
     fontSize: 14,
     marginTop: 4,
   },
-
-  /* === Modal === */
+  /* --- Modal --- */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingTop: getStatusBarHeight(true) + 40, 
+    paddingTop: getStatusBarHeight(true) + 40,
     alignItems: 'center',
   },
   modalBox: {
