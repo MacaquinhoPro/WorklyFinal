@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ImageBackground,
   Modal,
+  Alert,
   Animated,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
@@ -21,7 +22,7 @@ import {
   doc,
   query,
   where,
-  getDoc,          // ← NEW
+  getDoc,
 } from 'firebase/firestore';
 import { db, auth } from '../utils/firebaseconfig';
 
@@ -47,7 +48,7 @@ export default function Feed() {
   const swiperRef = useRef<any>(null);
   const [mapJob, setMapJob] = useState<Job | null>(null);
 
-  /* ---------- flash global ---------- */
+  /* —— flash global —— */
   const flashOpacity = useRef(new Animated.Value(0)).current;
   const [flashColor, setFlashColor] = useState<
     'rgba(178, 255, 201, 0.45)' | 'rgba(255,91,91,0.45)' | null
@@ -68,7 +69,7 @@ export default function Feed() {
     }).start(() => setFlashColor(null));
   };
 
-  /* ---------- datos ---------- */
+  /* —— datos —— */
   const defaultRegion = {
     latitude: 4.711,
     longitude: -74.0721,
@@ -102,21 +103,24 @@ export default function Feed() {
     [jobsRaw, appliedIds]
   );
 
-  /* ---------- aplicar ---------- */
+  /* —— postular —— */
   const apply = async (job: Job) => {
     try {
       const user = auth.currentUser;
       if (!user) return;
 
-      /* → Traer la URL del CV desde users/{uid} */
-      let cvURL = '';
-      try {
-        const uSnap = await getDoc(doc(db, 'users', user.uid));
-        if (uSnap.exists()) {
-          const u = uSnap.data() as any;
-          cvURL = u.cvURL || u.resumeURL || u.cv || '';
-        }
-      } catch (_) {}
+      /* lee perfil del usuario para obtener CV y otros datos */
+      const uSnap = await getDoc(doc(db, 'users', user.uid));
+      const u = uSnap.exists() ? (uSnap.data() as any) : {};
+
+      const cvURL = u.cvURL || u.resumeURL || u.cv || '';
+      if (!cvURL) {
+        Alert.alert(
+          'CV faltante',
+          'Debes subir tu hoja de vida en tu perfil antes de postularte.'
+        );
+        return;
+      }
 
       await setDoc(
         doc(db, 'applications', `${job.id}_${user.uid}`),
@@ -126,22 +130,24 @@ export default function Feed() {
           status: 'pending',
           createdAt: Date.now(),
           /* datos del usuario para el hiring */
-          name: user.displayName || 'Anónimo',
-          email: user.email || 'Sin correo',
-          photoURL: user.photoURL || '',
+          name: user.displayName || u.displayName || 'Anónimo',
+          email: user.email || u.email || 'Sin correo',
+          photoURL: user.photoURL || u.photoURL || '',
+          description: u.description || '',
           resumeURL: cvURL,
           /* caché del trabajo */
           title: job.title,
-          description: job.description,
+          jobDescription: job.description,
         },
         { merge: true }
       );
     } catch (e) {
       console.error('Error al postularse:', e);
+      Alert.alert('Error', 'No se pudo completar la postulación.');
     }
   };
 
-  /* ---------- UI ---------- */
+  /* —— UI —— */
   if (loading) {
     return (
       <View style={s.center}>
@@ -300,7 +306,11 @@ function Card({ job, onSwipeLeft, onSwipeRight, onMapPress }: any) {
                 style={s.btnSmall}
                 onPress={handler}
               >
-                <MaterialCommunityIcons name={icon as any} size={28} color={color} />
+                <MaterialCommunityIcons
+                  name={icon as any}
+                  size={28}
+                  color={color}
+                />
               </TouchableOpacity>
             );
           })}
@@ -321,7 +331,7 @@ function Card({ job, onSwipeLeft, onSwipeRight, onMapPress }: any) {
   );
 }
 
-/* ---------- estilos ---------- */
+/* —— estilos —— */
 const { width, height } = Dimensions.get('window');
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f2f2' },
