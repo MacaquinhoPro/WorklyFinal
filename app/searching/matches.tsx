@@ -57,7 +57,7 @@ type Job = {
   longitude?: number;
 };
 
-/* ---------- utils ---------- */
+/* ---------- utilidades ---------- */
 const fmt = (ts?: number) =>
   ts
     ? new Date(ts).toLocaleString(undefined, {
@@ -81,34 +81,51 @@ const translateStatus = (s: string) => {
   }
 };
 
+/* ============================================================ */
 export default function Matches() {
   /* ---------- notificaciones ---------- */
   const notifIdsRef = useRef<Record<string, string>>({});
 
+  // handler global
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,  // heads-up con app en foreground
+      shouldShowAlert: true,
       shouldPlaySound: true,
       shouldSetBadge: false,
     }),
   });
 
+  // prepara canal Android
+  const [androidChannelId, setAndroidChannelId] = useState('interviews');
+
   useEffect(() => {
     (async () => {
-      /* Canal Android con IMPORTANCE.HIGH */
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('interviews', {
-          name: 'Entrevistas',
-          importance: Notifications.AndroidImportance.HIGH,      // ← POP-UP
-          sound: 'default',
-          vibrationPattern: [0, 250, 250, 250],
-          enableVibrate: true,
-          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        });
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        console.warn('Permiso de notificaciones no concedido');
       }
 
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') console.warn('Permiso notificaciones denegado');
+      if (Platform.OS === 'android') {
+        // si el canal existe con baja importancia no podemos cambiarlo -> creamos otro
+        const existing = await Notifications.getNotificationChannelAsync(
+          'interviews'
+        );
+
+        let channelId = 'interviews';
+        if (!existing || existing.importance < Notifications.AndroidImportance.HIGH) {
+          channelId =
+            existing && existing.id === 'interviews' ? 'interviews_high' : 'interviews';
+          await Notifications.setNotificationChannelAsync(channelId, {
+            name: 'Entrevistas',
+            importance: Notifications.AndroidImportance.HIGH, // heads-up
+            sound: 'default',
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#FF231F7C',
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          });
+        }
+        setAndroidChannelId(channelId);
+      }
     })();
   }, []);
 
@@ -117,7 +134,7 @@ export default function Matches() {
   const [selected, setSelected] = useState<App | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /* ---------- carga en tiempo real ---------- */
+  /* ---------- carga tiempo real ---------- */
   useEffect(() => {
     const q = query(
       collection(db, 'applications'),
@@ -127,6 +144,7 @@ export default function Matches() {
       const enriched = await Promise.all(
         snap.docs.map(async (d) => {
           const data = d.data() as App;
+
           const jobSnap = await getDoc(doc(db, 'jobs', data.jobId));
           if (!jobSnap.exists()) return null;
           const job = jobSnap.data() as Job;
@@ -153,6 +171,7 @@ export default function Matches() {
           } as App;
         })
       );
+
       setApps(enriched.filter((a): a is App => !!a));
       setLoading(false);
     });
@@ -165,31 +184,36 @@ export default function Matches() {
       for (const app of apps) {
         const storedId = notifIdsRef.current[app.id];
 
-        // programar si hay entrevista futura y aún no hay notificación
-        if (app.interviewAt && app.interviewAt > Date.now() && !storedId) {
+        // Si hay entrevista futura -> programar si no existe
+        if (
+          app.interviewAt &&
+          app.interviewAt > Date.now() &&
+          !storedId
+        ) {
           const notifId = await Notifications.scheduleNotificationAsync({
             content: {
               title: 'Entrevista programada',
               body: `Entrevista para "${app.title}" a las ${fmt(app.interviewAt)}`,
               sound: 'default',
-              priority: Notifications.AndroidNotificationPriority.HIGH, // ⬅️
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+              vibrate: [0, 250, 250, 250],
             },
-            trigger: {
-              channelId: 'interviews',
-              date: new Date(app.interviewAt),
-            } as any,
+            trigger: { date: new Date(app.interviewAt), channelId: androidChannelId },
           });
           notifIdsRef.current[app.id] = notifId;
         }
 
-        // cancelar si ya no corresponde
-        if ((!app.interviewAt || app.interviewAt <= Date.now()) && storedId) {
+        // Si ya no hay entrevista o está en pasado -> cancelar
+        if (
+          (!app.interviewAt || app.interviewAt <= Date.now()) &&
+          storedId
+        ) {
           await Notifications.cancelScheduledNotificationAsync(storedId);
           delete notifIdsRef.current[app.id];
         }
       }
     })();
-  }, [apps]);
+  }, [apps, androidChannelId]);
 
   /* ---------- cancelar postulación ---------- */
   const handleCancel = (app: App) => {
@@ -202,12 +226,12 @@ export default function Matches() {
           text: 'Sí, cancelar',
           style: 'destructive',
           onPress: async () => {
-            const storedId = notifIdsRef.current[app.id];
-            if (storedId) {
-              await Notifications.cancelScheduledNotificationAsync(storedId);
-              delete notifIdsRef.current[app.id];
-            }
             try {
+              const storedId = notifIdsRef.current[app.id];
+              if (storedId) {
+                await Notifications.cancelScheduledNotificationAsync(storedId);
+                delete notifIdsRef.current[app.id];
+              }
               await deleteDoc(doc(db, 'applications', app.id));
             } catch (err) {
               console.error(err);
@@ -242,9 +266,14 @@ export default function Matches() {
               <Text style={s.cancelTxt}>Cancelar</Text>
             </TouchableOpacity>
           </View>
+
           <Text style={s.title}>{item.title}</Text>
-          <Text style={s.desc} numberOfLines={2}>{item.description}</Text>
-          <Text style={s.subtitle}>{item.duration} • {item.pay}</Text>
+          <Text style={s.desc} numberOfLines={2}>
+            {item.description}
+          </Text>
+          <Text style={s.subtitle}>
+            {item.duration} • {item.pay}
+          </Text>
           {item.interviewAt && (
             <Text style={s.desc}>Entrevista: {fmt(item.interviewAt)}</Text>
           )}
@@ -284,21 +313,30 @@ export default function Matches() {
             <View style={s.modalBox}>
               <ScrollView>
                 {selected.imageUrl && (
-                  <Image source={{ uri: selected.imageUrl }} style={s.modalImage} />
+                  <Image
+                    source={{ uri: selected.imageUrl }}
+                    style={s.modalImage}
+                  />
                 )}
                 <Text style={s.modalTitle}>{selected.title}</Text>
                 <Text style={s.detailText}>{selected.description}</Text>
-                <Text style={s.detailText}>Estado: {translateStatus(selected.status)}</Text>
+                <Text style={s.detailText}>
+                  Estado: {translateStatus(selected.status)}
+                </Text>
                 <Text style={s.detailText}>Salario: {selected.pay}</Text>
                 <Text style={s.detailText}>Duración: {selected.duration}</Text>
                 {selected.interviewAt && (
-                  <Text style={s.detailText}>Entrevista: {fmt(selected.interviewAt)}</Text>
+                  <Text style={s.detailText}>
+                    Entrevista: {fmt(selected.interviewAt)}
+                  </Text>
                 )}
 
                 <View style={s.detailList}>
                   <Text style={s.detailText}>Requisitos:</Text>
                   {selected.requirements.map((r, i) => (
-                    <Text key={i} style={s.detailText}>• {r}</Text>
+                    <Text key={i} style={s.detailText}>
+                      • {r}
+                    </Text>
                   ))}
                 </View>
 
@@ -311,13 +349,18 @@ export default function Matches() {
                     longitudeDelta: 0.05,
                   }}
                 >
-                  <Marker coordinate={{
-                    latitude: selected.latitude ?? 4.711,
-                    longitude: selected.longitude ?? -74.0721,
-                  }} />
+                  <Marker
+                    coordinate={{
+                      latitude: selected.latitude ?? 4.711,
+                      longitude: selected.longitude ?? -74.0721,
+                    }}
+                  />
                 </MapView>
 
-                <TouchableOpacity onPress={() => setSelected(null)} style={s.modalClose}>
+                <TouchableOpacity
+                  onPress={() => setSelected(null)}
+                  style={s.modalClose}
+                >
                   <Text style={s.modalCloseText}>Cerrar</Text>
                 </TouchableOpacity>
               </ScrollView>
@@ -337,15 +380,44 @@ const s = StyleSheet.create({
     paddingTop: getStatusBarHeight(true),
     paddingHorizontal: 16,
   },
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  noJobsContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  noJobsText: { fontSize: 18, color: '#444' },
-  /* Tarjeta */
-  cardWrapper: { marginVertical: 8, borderRadius: 12, overflow: 'hidden', elevation: 3 },
-  card: { width: '100%', height: 190, justifyContent: 'flex-end' },
-  cardImage: { resizeMode: 'cover' },
-  cardOverlay: { backgroundColor: 'rgba(0,0,0,0.4)', padding: 12 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  loading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noJobsContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noJobsText: {
+    fontSize: 18,
+    color: '#444',
+  },
+  /* --- Tarjeta --- */
+  cardWrapper: {
+    marginVertical: 8,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 3,
+  },
+  card: {
+    width: '100%',
+    height: 190,
+    justifyContent: 'flex-end',
+  },
+  cardImage: {
+    resizeMode: 'cover',
+  },
+  cardOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    padding: 12,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   status: {
     color: '#fff',
     fontSize: 14,
@@ -355,19 +427,81 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.25)',
     borderRadius: 6,
   },
-  cancelBtn: { backgroundColor: 'rgba(255, 64, 64, 0.9)', borderRadius: 6, paddingVertical: 2, paddingHorizontal: 8 },
-  cancelTxt: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  title: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginTop: 4 },
-  desc: { color: '#eee', fontSize: 14, marginVertical: 4 },
-  subtitle: { color: '#eee', fontSize: 14, marginTop: 4 },
-  /* Modal */
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', paddingTop: getStatusBarHeight(true) + 40, alignItems: 'center' },
-  modalBox: { width: '88%', maxHeight: '88%', backgroundColor: '#fff', borderRadius: 12, padding: 16 },
-  modalImage: { width: '100%', height: 180, borderRadius: 8, marginBottom: 12 },
-  modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8 },
-  detailText: { fontSize: 14, color: '#444', marginBottom: 8 },
-  detailList: { marginBottom: 12 },
-  detailMap: { width: '100%', height: 200, borderRadius: 12, marginVertical: 12 },
-  modalClose: { backgroundColor: '#5A40EA', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 8 },
-  modalCloseText: { color: '#fff', fontWeight: '600' },
+  cancelBtn: {
+    backgroundColor: 'rgba(255, 64, 64, 0.9)',
+    borderRadius: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+  },
+  cancelTxt: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  title: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  desc: {
+    color: '#eee',
+    fontSize: 14,
+    marginVertical: 4,
+  },
+  subtitle: {
+    color: '#eee',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  /* --- Modal --- */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingTop: getStatusBarHeight(true) + 40,
+    alignItems: 'center',
+  },
+  modalBox: {
+    width: '88%',
+    maxHeight: '88%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+  },
+  modalImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  detailText: {
+    fontSize: 14,
+    color: '#444',
+    marginBottom: 8,
+  },
+  detailList: {
+    marginBottom: 12,
+  },
+  detailMap: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    marginVertical: 12,
+  },
+  modalClose: {
+    backgroundColor: '#5A40EA',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  modalCloseText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
 });
