@@ -19,7 +19,7 @@ Aplicación móvil para conectar **empleadores** y **postulantes** en ofertas la
 
 ## 🛠️ Tecnologías
 
-* **React Native (Expo SDK 50)**
+* **React Native (Expo SDK 52)**
 * **TypeScript**
 * **Expo Router** (navegación basada en archivos)
 * **Firebase** (Auth | Firestore | Realtime DB)
