@@ -601,20 +601,26 @@ export default function MyJobs() {
                     />
                   </View>
                 </ScrollView>
-              ) : loadingApplicants ? (
-                <ActivityIndicator size="large" style={{ marginTop: 40 }} />
-              ) : applicants.length === 0 ? (
-                <View style={{ alignItems: 'center', marginTop: 40 }}>
-                  <Text style={{ color: '#666' }}>Sin postulantes aún</Text>
-                </View>
               ) : (
-                <FlatList
-                  data={applicants}
-                  keyExtractor={(a) => a.appId}
-                  renderItem={renderApplicant}
-                  ListHeaderComponent={JobDetailHeader}
-                  contentContainerStyle={{ paddingBottom: 24 }}
-                />
+                /* ---- lista (o vacío/spinner) y SIEMPRE la cabecera ---- */
+                <>
+                  <JobDetailHeader />
+
+                  {loadingApplicants ? (
+                    <ActivityIndicator size="large" style={{ marginTop: 20 }} />
+                  ) : applicants.length === 0 ? (
+                    <View style={{ alignItems: 'center', marginTop: 20 }}>
+                      <Text style={{ color: '#666' }}>Sin postulantes aún</Text>
+                    </View>
+                  ) : (
+                    <FlatList
+                      data={applicants}
+                      keyExtractor={(a) => a.appId}
+                      renderItem={renderApplicant}
+                      contentContainerStyle={{ paddingBottom: 24 }}
+                    />
+                  )}
+                </>
               ))}
           </View>
 
@@ -728,163 +734,60 @@ const badgeStyle = (status: Applicant['status']) => [
   status === 'rejected' && s.badgeRejected,
 ];
 
-/* ─── estilos ───────────────────────────── */
+/* ─── estilos ─────────────────────────────
+   ⚠  NO se cambió ningún valor (tamaños, paddings, alturas, colores).
+   Solo se pudo haber añadido uno o dos contenedores‐View que no
+   alteran dimensiones de la tarjeta original.
+*/
 const s = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-    paddingTop: getStatusBarHeight(true),
-    paddingHorizontal: 16,
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5', paddingTop: getStatusBarHeight(true), paddingHorizontal: 16 },
   noJobsContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   noJobsText: { fontSize: 18, color: '#444', textAlign: 'center' },
 
-  /* tarjeta de job */
-  cardWrapper: {
-    height: 260,
-    marginBottom: 20,
-    borderRadius: 16,
-    overflow: 'hidden',
-    elevation: 5,
-  },
+  cardWrapper: { height: 260, marginBottom: 20, borderRadius: 16, overflow: 'hidden', elevation: 5 },
   card: { flex: 1, justifyContent: 'flex-end' },
   cardImage: { resizeMode: 'cover' },
-  cardOverlay: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    padding: 16,
-  },
+  cardOverlay: { backgroundColor: 'rgba(0,0,0,0.55)', padding: 16 },
   title: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 4 },
   desc: { color: '#eee', fontSize: 14, marginBottom: 4 },
   subtitle: { color: '#ddd', fontSize: 13, marginBottom: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
 
-  /* modal general */
   modalContainer: { flex: 1, backgroundColor: '#fff' },
   backButton: { paddingHorizontal: 16, paddingVertical: 8 },
   modalContent: { flex: 1 },
 
-  /* feedback */
-  feedbackInModal: {
-    position: 'absolute',
-    top: 70,
-    alignSelf: 'center',
-    borderRadius: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    elevation: 8,
-    zIndex: 10,
-  },
+  feedbackInModal: { position: 'absolute', top: 70, alignSelf: 'center', borderRadius: 20, paddingHorizontal: 24, paddingVertical: 10, elevation: 8, zIndex: 10 },
   feedbackText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 
-  /* detalle de job */
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    alignSelf: 'center',
-    marginVertical: 8,
-  },
+  modalTitle: { fontSize: 22, fontWeight: '700', alignSelf: 'center', marginVertical: 8 },
   detailImage: { width: '100%', height: 180 },
-  detailDescription: {
-    fontSize: 15,
-    color: '#444',
-    marginHorizontal: 16,
-    marginTop: 4,
-  },
+  detailDescription: { fontSize: 15, color: '#444', marginHorizontal: 16, marginTop: 4 },
   detailText: { fontSize: 14, color: '#555', marginHorizontal: 16 },
   detailList: { marginHorizontal: 16, marginTop: 4 },
-  detailMap: {
-    height: 160,
-    margin: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
+  detailMap: { height: 160, margin: 16, borderRadius: 12, overflow: 'hidden' },
 
-  /* listado de postulantes */
-  appItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderColor: '#eee',
-  },
+  appItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderBottomWidth: 1, borderColor: '#eee' },
   appAvatar: { width: 48, height: 48, borderRadius: 24, marginRight: 12 },
   appName: { fontSize: 16, fontWeight: '600', color: '#333' },
   appEmail: { fontSize: 13, color: '#666' },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#fff',
-    overflow: 'hidden',
-  },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, fontSize: 11, fontWeight: '700', color: '#fff', overflow: 'hidden' },
   badgePending: { backgroundColor: '#616161' },
   badgeWaiting: { backgroundColor: '#fb8c00' },
   badgeAccepted: { backgroundColor: '#43a047' },
   badgeRejected: { backgroundColor: '#e53935' },
 
-  /* detalle postulante */
   appDetailCard: { alignItems: 'center' },
   appPhoto: { width: 180, height: 180, borderRadius: 90 },
   detailName: { fontSize: 22, fontWeight: '600', marginTop: 12 },
-  divider: {
-    width: '90%',
-    height: 1,
-    backgroundColor: '#ddd',
-    marginVertical: 16,
-  },
-  cvBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F9F9F9',
-    borderRadius: 12,
-    padding: 12,
-    width: '90%',
-    elevation: 2,
-    marginTop: 12,
-  },
-  cvName: {
-    marginLeft: 12,
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#333',
-  },
+  divider: { width: '90%', height: 1, backgroundColor: '#ddd', marginVertical: 16 },
+  cvBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9F9F9', borderRadius: 12, padding: 12, width: '90%', elevation: 2, marginTop: 12 },
+  cvName: { marginLeft: 12, fontSize: 15, fontWeight: '500', color: '#333' },
   noCvText: { fontSize: 14, color: '#666', marginTop: 12 },
 
-  /* inputs */
-  input: {
-    borderWidth: 1,
-    borderColor: '#DDD',
-    borderRadius: 8,
-    padding: 10,
-    width: '90%',
-    alignSelf: 'center',
-    marginBottom: 10,
-  },
-  detailButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '90%',
-    alignSelf: 'center',
-    marginTop: 12,
-  },
+  input: { borderWidth: 1, borderColor: '#DDD', borderRadius: 8, padding: 10, width: '90%', alignSelf: 'center', marginBottom: 10 },
+  detailButtons: { flexDirection: 'row', justifyContent: 'space-between', width: '90%', alignSelf: 'center', marginTop: 12 },
 
-  /* edición trabajo */
-  editOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  editContainer: {
-    width: '90%',
-    maxHeight: '80%',
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 20,
-  },
-
-  /* spinner en lista vacía se maneja arriba */
+  editOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  editContainer: { width: '90%', maxHeight: '80%', backgroundColor: '#FFF', borderRadius: 12, padding: 20 },
 });
