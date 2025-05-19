@@ -71,38 +71,46 @@ export default function MyJobs() {
   const [loadingApplicants, setLoadingApplicants] = useState(false);
   const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
 
-  const [scheduleModal, setScheduleModal] = useState<{ visible: boolean; app: Applicant | null; date: string; time: string }>({
+  const [scheduleModal, setScheduleModal] = useState<{
+    visible: boolean;
+    app: Applicant | null;
+    date: string;
+    time: string;
+  }>({
     visible: false,
     app: null,
     date: '',
     time: '',
   });
   const [schedulerActive, setSchedulerActive] = useState(false);
-  const [picker, setPicker] = useState<{ visible: boolean; mode: 'date' | 'time' }>({
-    visible: false,
-    mode: 'date',
-  });
+  const [picker, setPicker] = useState<{ visible: boolean; mode: 'date' | 'time' }>(
+    { visible: false, mode: 'date' }
+  );
 
-  // feedback banner
-  const [feedback, setFeedback] = useState<{ visible: boolean; text: string; color: string | string[] }>({
-    visible: false,
-    text: '',
-    color: '#66bb6a',
-  });
+  /* ───── feedback banner ───────────────────────────── */
+  const [feedback, setFeedback] = useState<{
+    visible: boolean;
+    text: string;
+    color: string | string[];
+  }>({ visible: false, text: '', color: '#66bb6a' });
   const feedbackOpacity = useRef(new Animated.Value(0)).current;
 
   const showFeedback = (message: string, color: string | string[]) => {
     setFeedback({ visible: true, text: message, color });
     feedbackOpacity.setValue(0);
-    Animated.timing(feedbackOpacity, { toValue: 1, duration: 300, useNativeDriver: true }).start(
-      () => {
-        setTimeout(() => {
-          Animated.timing(feedbackOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(
-            () => setFeedback(f => ({ ...f, visible: false }))
-          );
-        }, 1500);
-      }
-    );
+    Animated.timing(feedbackOpacity, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setTimeout(() => {
+        Animated.timing(feedbackOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => setFeedback(f => ({ ...f, visible: false })));
+      }, 1500);
+    });
   };
 
   const [editJob, setEditJob] = useState<Job | null>(null);
@@ -157,35 +165,35 @@ export default function MyJobs() {
         name: data.name,
         experienceYears: data.experienceYears ?? null,
         email: data.email,
-        photoURL: data.photoURL || data.photoUrl || data.profileUrl || '',
-        description: data.descriptionUser || data.description || '',
-        resumeURL: data.resumeURL || data.cvURL || data.cv || '',
+        photoURL: data.photoURL || '',
+        description: data.description || '',
+        resumeURL: data.resumeURL || '',
       } as Applicant;
     });
-    // ---- If any applicant lacks photoURL, fetch it from users ----
+
+    /* ───── enriquecer con datos del usuario si faltan ───── */
     const enriched = await Promise.all(
       apps.map(async a => {
-        if (a.photoURL) return a;
-        try {
-          let userSnap = await getDoc(doc(db, 'users', a.userId));
-          if (!userSnap.exists()) {
-            const qsUser = await getDocs(
-              query(collection(db, 'users'), where('uid', '==', a.userId))
-            );
-            if (!qsUser.empty) userSnap = qsUser.docs[0];
-          }
-          if (userSnap.exists()) {
-            const u = userSnap.data() as any;
-            return {
-              ...a,
-              photoURL: u.photoURL || u.photoUrl || u.profileUrl || '',
-              description: a.description || u.description || '',
-            };
-          }
-        } catch (_) {}
+        let userSnap = await getDoc(doc(db, 'users', a.userId));
+        if (!userSnap.exists()) {
+          const qsUser = await getDocs(
+            query(collection(db, 'users'), where('uid', '==', a.userId))
+          );
+          if (!qsUser.empty) userSnap = qsUser.docs[0];
+        }
+        if (userSnap.exists()) {
+          const u = userSnap.data() as any;
+          return {
+            ...a,
+            photoURL: a.photoURL || u.photoURL || '',
+            description: a.description || u.description || '',
+            resumeURL: a.resumeURL || u.cvURL || u.resumeURL || u.cv || '',
+          };
+        }
         return a;
       })
     );
+
     setApplicants(enriched);
     setLoadingApplicants(false);
   };
@@ -294,7 +302,7 @@ export default function MyJobs() {
     </TouchableOpacity>
   );
 
-  // ==== Job detail header used by the applicants list ====
+  /* ───── JobDetailHeader ───────────────────────────── */
   const JobDetailHeader = () => {
     if (!selectedJob) return null;
     return (
@@ -337,6 +345,7 @@ export default function MyJobs() {
     );
   };
 
+  /* ───── render applicant ──────────────────────────── */
   const renderApplicant = ({ item }: { item: Applicant }) => (
     <TouchableOpacity style={s.appItem} onPress={() => setSelectedApplicant(item)}>
       {item.photoURL ? (
@@ -352,6 +361,7 @@ export default function MyJobs() {
     </TouchableOpacity>
   );
 
+  /* ───── render principal ──────────────────────────── */
   return (
     <SafeAreaView style={s.container}>
       {jobs.length === 0 ? (
@@ -409,8 +419,6 @@ export default function MyJobs() {
                     {selectedApplicant.description && (
                       <Text style={s.detailText}>{selectedApplicant.description}</Text>
                     )}
-
-                    {/* ---- CV PDF ---- */}
                     {selectedApplicant.resumeURL ? (
                       <TouchableOpacity
                         style={s.cvBox}
@@ -426,7 +434,6 @@ export default function MyJobs() {
                     ) : (
                       <Text style={s.noCvText}>Sin hoja de vida</Text>
                     )}
-
                     <View style={s.divider} />
                     {schedulerActive ? (
                       <>
@@ -463,7 +470,12 @@ export default function MyJobs() {
                           color="#fb8c00"
                           onPress={() => {
                             setSchedulerActive(true);
-                            setScheduleModal({ visible: false, app: selectedApplicant, date: new Date().toISOString().split('T')[0], time: '' });
+                            setScheduleModal({
+                              visible: false,
+                              app: selectedApplicant,
+                              date: new Date().toISOString().split('T')[0],
+                              time: '',
+                            });
                           }}
                         />
                       </View>
@@ -474,7 +486,6 @@ export default function MyJobs() {
               ) : loadingApplicants ? (
                 <ActivityIndicator size="large" style={{ marginTop: 40 }} />
               ) : (
-                /* ===== JOB DETAILS + APPLICANTS IN ONE LIST ===== */
                 <FlatList
                   data={applicants}
                   keyExtractor={a => a.appId}
@@ -486,41 +497,50 @@ export default function MyJobs() {
               )
             )}
           </View>
-        {/* Inline DateTimePicker for scheduler */}
-        {picker.visible && (
-          <DateTimePicker
-            value={new Date()}
-            mode={picker.mode}
-            display={
-              Platform.OS === 'ios'
-                ? picker.mode === 'date'
-                  ? 'inline'
-                  : 'spinner'
-                : 'default'
-            }
-            style={
-              Platform.OS === 'ios'
-                ? { width: '60%', height: 100, transform: [{ scale: 0.8 }], alignSelf: 'center' }
-                : { width: '60%', transform: [{ scale: 0.9 }], alignSelf: 'center' }
-            }
-            onChange={(_, selected) => {
-              if (!selected) {
-                setPicker({ ...picker, visible: false });
-                return;
+          {/* Inline DateTimePicker */}
+          {picker.visible && (
+            <DateTimePicker
+              value={new Date()}
+              mode={picker.mode}
+              display={
+                Platform.OS === 'ios'
+                  ? picker.mode === 'date'
+                    ? 'inline'
+                    : 'spinner'
+                  : 'default'
               }
-              if (picker.mode === 'date') {
-                const dStr = selected.toISOString().split('T')[0];
-                setScheduleModal(prev => ({ ...prev, date: dStr }));
-                setPicker({ visible: false, mode: 'time' }); // next pick time
-              } else {
-                const hh = String(selected.getHours()).padStart(2, '0');
-                const mm = String(selected.getMinutes()).padStart(2, '0');
-                setScheduleModal(prev => ({ ...prev, time: `${hh}:${mm}` }));
-                setPicker({ visible: false, mode: 'date' });
+              style={
+                Platform.OS === 'ios'
+                  ? {
+                      width: '60%',
+                      height: 100,
+                      transform: [{ scale: 0.8 }],
+                      alignSelf: 'center',
+                    }
+                  : {
+                      width: '60%',
+                      transform: [{ scale: 0.9 }],
+                      alignSelf: 'center',
+                    }
               }
-            }}
-          />
-        )}
+              onChange={(_, selected) => {
+                if (!selected) {
+                  setPicker({ ...picker, visible: false });
+                  return;
+                }
+                if (picker.mode === 'date') {
+                  const dStr = selected.toISOString().split('T')[0];
+                  setScheduleModal(prev => ({ ...prev, date: dStr }));
+                  setPicker({ visible: false, mode: 'time' });
+                } else {
+                  const hh = String(selected.getHours()).padStart(2, '0');
+                  const mm = String(selected.getMinutes()).padStart(2, '0');
+                  setScheduleModal(prev => ({ ...prev, time: `${hh}:${mm}` }));
+                  setPicker({ visible: false, mode: 'date' });
+                }
+              }}
+            />
+          )}
         </SafeAreaView>
       </Modal>
 
@@ -567,6 +587,7 @@ export default function MyJobs() {
   );
 }
 
+/* ───── estilos ────────────────────────────────────── */
 const s = StyleSheet.create({
   container: {
     flex: 1,
@@ -655,7 +676,6 @@ const s = StyleSheet.create({
     fontSize: 16,
     color: '#555',
     marginBottom: 12,
-    textAlign: 'left',
   },
   detailText: {
     fontSize: 16,
@@ -711,27 +731,6 @@ const s = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
     marginVertical: 16,
-  },
-  editOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  editContainer: {
-    width: '90%',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    maxHeight: '80%',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 12,
-    justifyContent: 'center',
   },
   appItem: {
     flexDirection: 'row',
@@ -799,13 +798,34 @@ const s = StyleSheet.create({
     marginBottom: 20,
     alignSelf: 'center',
   },
+  editOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editContainer: {
+    width: '90%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    maxHeight: '80%',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    justifyContent: 'center',
+  },
 });
 
+/* ───── badge dinámico ─────────────────────────────── */
 const badgeStyle = (status: string): StyleProp<TextStyle> => ({
   paddingHorizontal: 8,
   paddingVertical: 4,
   borderRadius: 6,
-  overflow: 'hidden',
   color: '#fff',
   fontSize: 12,
   marginLeft: 12,
