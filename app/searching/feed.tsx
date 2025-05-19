@@ -1,4 +1,3 @@
-// app/searching/feed.tsx
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View,
@@ -22,6 +21,7 @@ import {
   doc,
   query,
   where,
+  getDoc,          // ← NEW
 } from 'firebase/firestore';
 import { db, auth } from '../utils/firebaseconfig';
 
@@ -56,28 +56,17 @@ export default function Feed() {
   const triggerFlash = (type: 'green' | 'red') => {
     const color =
       type === 'green'
-        ? 'rgba(178, 255, 201, 0.45)'   // verde claro
-        : 'rgba(255,91,91,0.45)';    // rojo
+        ? 'rgba(178, 255, 201, 0.45)'
+        : 'rgba(255,91,91,0.45)';
 
     setFlashColor(color);
-    flashOpacity.setValue(1); // completamente visible
-
-    // Desvanece la opacidad a 0 (pero sin desmontar todavía)
+    flashOpacity.setValue(1);
     Animated.timing(flashOpacity, {
       toValue: 0,
       duration: 2000,
       useNativeDriver: true,
-    }).start();
-
-    // Forzamos desmontar el color exactamente a los 2 segundos
-    setTimeout(() => {
-      setFlashColor(null);
-    }, 2000);
+    }).start(() => setFlashColor(null));
   };
-
-
-
-
 
   /* ---------- datos ---------- */
   const defaultRegion = {
@@ -113,27 +102,44 @@ export default function Feed() {
     [jobsRaw, appliedIds]
   );
 
+  /* ---------- aplicar ---------- */
   const apply = async (job: Job) => {
     try {
       const user = auth.currentUser;
       if (!user) return;
 
-      await setDoc(doc(db, 'applications', `${job.id}_${user.uid}`), {
-        jobId: job.id,
-        userId: user.uid,
-        status: 'pending',
-        createdAt: Date.now(),
-        title: job.title,
-        description: job.description,
-        name: user.displayName || 'Anónimo',       // 🔁 nombre que espera tu render
-        email: user.email || 'Sin correo',         // 🔁 correo que espera tu render
-        photoURL: user.photoURL || null,           // 🔁 imagen si está disponible
-      });
-    } catch (error) {
-      console.error('Error al postularse:', error);
+      /* → Traer la URL del CV desde users/{uid} */
+      let cvURL = '';
+      try {
+        const uSnap = await getDoc(doc(db, 'users', user.uid));
+        if (uSnap.exists()) {
+          const u = uSnap.data() as any;
+          cvURL = u.cvURL || u.resumeURL || u.cv || '';
+        }
+      } catch (_) {}
+
+      await setDoc(
+        doc(db, 'applications', `${job.id}_${user.uid}`),
+        {
+          jobId: job.id,
+          userId: user.uid,
+          status: 'pending',
+          createdAt: Date.now(),
+          /* datos del usuario para el hiring */
+          name: user.displayName || 'Anónimo',
+          email: user.email || 'Sin correo',
+          photoURL: user.photoURL || '',
+          resumeURL: cvURL,
+          /* caché del trabajo */
+          title: job.title,
+          description: job.description,
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      console.error('Error al postularse:', e);
     }
   };
-
 
   /* ---------- UI ---------- */
   if (loading) {
@@ -156,7 +162,7 @@ export default function Feed() {
 
   return (
     <View style={s.container} key={cards.length}>
-      {/* Flash global */}
+      {/* Flash */}
       {flashColor && (
         <Animated.View
           pointerEvents="none"
@@ -220,12 +226,7 @@ export default function Feed() {
 
       {/* Mapa */}
       {mapJob && (
-        <Modal
-          transparent
-          animationType="slide"
-          visible
-          onRequestClose={() => setMapJob(null)}
-        >
+        <Modal transparent animationType="slide" visible>
           <View style={s.modalOverlay}>
             <View style={s.mapContainer}>
               <MapView
@@ -285,15 +286,13 @@ function Card({ job, onSwipeLeft, onSwipeRight, onMapPress }: any) {
                 ? onSwipeRight
                 : icon === 'close'
                 ? onSwipeLeft
-                : icon === 'map'
-                ? onMapPress
-                : () => {};
+                : onMapPress;
             const color =
-            icon === 'close'
-              ? '#FF5B5B'
-              : icon === 'heart'
-              ? '#4EFF82'
-              : '#C766FF'; // map button
+              icon === 'close'
+                ? '#FF5B5B'
+                : icon === 'heart'
+                ? '#4EFF82'
+                : '#C766FF';
 
             return (
               <TouchableOpacity
@@ -301,11 +300,7 @@ function Card({ job, onSwipeLeft, onSwipeRight, onMapPress }: any) {
                 style={s.btnSmall}
                 onPress={handler}
               >
-                <MaterialCommunityIcons
-                  name={icon as any}
-                  size={28}
-                  color={color}
-                />
+                <MaterialCommunityIcons name={icon as any} size={28} color={color} />
               </TouchableOpacity>
             );
           })}
@@ -328,7 +323,6 @@ function Card({ job, onSwipeLeft, onSwipeRight, onMapPress }: any) {
 
 /* ---------- estilos ---------- */
 const { width, height } = Dimensions.get('window');
-
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f2f2' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -343,7 +337,6 @@ const s = StyleSheet.create({
     height: height * 0.75,
     alignSelf: 'center',
     marginTop: 20,
-    overflow: 'visible', // permite que el overlay salga sin recorte
   },
   card: { flex: 1, justifyContent: 'flex-end', position: 'relative' },
   cardImage: { flex: 1 },
@@ -368,19 +361,15 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 5,
-    zIndex: 20,
   },
-  /* --- iconos fuera de la tarjeta --- */
   overlayWrapperLeft: {
     position: 'absolute',
     left: -width * 0.4,
-    width, // ancho para que el hijo no se recorte
+    width,
     top: 0,
     bottom: 0,
-    overflow: 'visible',
     justifyContent: 'center',
     alignItems: 'flex-end',
-    paddingRight: 10,
   },
   overlayWrapperRight: {
     position: 'absolute',
@@ -388,17 +377,14 @@ const s = StyleSheet.create({
     width,
     top: 0,
     bottom: 0,
-    overflow: 'visible',
     justifyContent: 'center',
     alignItems: 'flex-start',
-    paddingLeft: 10,
   },
   overlayIcon: {
     pointerEvents: 'none',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  /* mapa */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -418,6 +404,5 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
     borderRadius: 18,
     padding: 4,
-    zIndex: 20,
   },
 });
