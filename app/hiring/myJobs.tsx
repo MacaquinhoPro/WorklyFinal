@@ -15,11 +15,9 @@ import {
   Alert,
   ScrollView,
   TextInput,
-  StyleProp,
-  TextStyle,
+  Platform,
   SafeAreaView,
   Animated,
-  Platform,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,8 +30,8 @@ import {
   where,
   onSnapshot,
   doc,
-  deleteDoc,
   updateDoc,
+  deleteDoc,
   getDoc,
   getDocs,
 } from 'firebase/firestore';
@@ -54,7 +52,7 @@ type Job = {
 type Applicant = {
   appId: string;
   userId: string;
-  status: string;
+  status: 'pending' | 'waiting' | 'accepted' | 'rejected';
   name: string;
   email: string;
   photoURL?: string;
@@ -63,60 +61,73 @@ type Applicant = {
   experienceYears?: number | null;
 };
 
-/* ─── componente ────────────────────────── */
+/* ─── componente principal ───────────────── */
 export default function MyJobs() {
   /* --- estado principal --- */
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
-  const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
+  const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(
+    null
+  );
 
-  /* --- scheduler --- */
-  const [scheduleModal, setScheduleModal] = useState({
-    visible: false,
-    app: null as Applicant | null,
-    date: '',
-    time: '',
-  });
+  /* --- programación de entrevista --- */
+  const [scheduleModal, setScheduleModal] = useState<{
+    visible: boolean;
+    app: Applicant | null;
+    date: string;
+    time: string;
+  }>({ visible: false, app: null, date: '', time: '' });
   const [schedulerActive, setSchedulerActive] = useState(false);
-  const [picker, setPicker] = useState<{ visible: boolean; mode: 'date' | 'time' }>({
-    visible: false,
-    mode: 'date',
-  });
+  const [picker, setPicker] = useState<{
+    visible: boolean;
+    mode: 'date' | 'time';
+  }>({ visible: false, mode: 'date' });
 
-  /* --- feedback banner --- */
-  const [feedback, setFeedback] = useState({
-    visible: false,
-    text: '',
-    color: '#66bb6a' as string | string[],
-  });
+  /* --- feedback (banner) --- */
+  const [feedback, setFeedback] = useState<{
+    visible: boolean;
+    text: string;
+    color: string | string[];
+  }>({ visible: false, text: '', color: '#66bb6a' });
   const feedbackOpacity = useRef(new Animated.Value(0)).current;
 
   const showFeedback = (msg: string, color: string | string[]) => {
     setFeedback({ visible: true, text: msg, color });
     feedbackOpacity.setValue(0);
-    Animated.timing(feedbackOpacity, { toValue: 1, duration: 300, useNativeDriver: true }).start(
-      () => {
-        setTimeout(() => {
-          Animated.timing(feedbackOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(
-            () => setFeedback(f => ({ ...f, visible: false }))
-          );
-        }, 1500);
-      }
-    );
+    Animated.timing(feedbackOpacity, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setTimeout(() => {
+        Animated.timing(feedbackOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => setFeedback((f) => ({ ...f, visible: false })));
+      }, 1500);
+    });
   };
 
   /* --- listener trabajos del hiring --- */
   useEffect(() => {
-    const q = query(collection(db, 'jobs'), where('ownerUid', '==', auth.currentUser!.uid));
-    const unsub = onSnapshot(q, snap => {
+    const q = query(
+      collection(db, 'jobs'),
+      where('ownerUid', '==', auth.currentUser!.uid)
+    );
+    const unsub = onSnapshot(q, (snap) => {
       setJobs(
-        snap.docs.map(d => ({
-          id: d.id,
-          ...(d.data() as any),
-          description: (d.data() as any).description ?? '',
-        })) as Job[]
+        snap.docs.map(
+          (d) =>
+            ({
+              id: d.id,
+              ...(d.data() as any),
+              description: (d.data() as any).description ?? '',
+            } as Job)
+        )
       );
     });
     return () => unsub();
@@ -137,10 +148,14 @@ export default function MyJobs() {
       const snap = await getDoc(doc(db, 'jobs', job.id));
       setSelectedJob(
         snap.exists()
-          ? { ...job, ...(snap.data() as any), description: (snap.data() as any).description ?? job.description }
+          ? {
+              ...job,
+              ...(snap.data() as any),
+              description: (snap.data() as any).description ?? job.description,
+            }
           : job
       );
-    } catch (e) {
+    } catch (_) {
       setSelectedJob(job);
     }
 
@@ -148,12 +163,15 @@ export default function MyJobs() {
     setLoadingApplicants(true);
 
     /* listener realtime de applications */
-    const q = query(collection(db, 'applications'), where('jobId', '==', job.id));
+    const q = query(
+      collection(db, 'applications'),
+      where('jobId', '==', job.id)
+    );
     appsUnsubRef.current = onSnapshot(
       q,
-      async snap => {
+      async (snap) => {
         try {
-          const baseApps = snap.docs.map(d => {
+          const baseApps = snap.docs.map((d) => {
             const data = d.data() as any;
             return {
               appId: d.id,
@@ -170,12 +188,18 @@ export default function MyJobs() {
 
           /* completa info faltante desde users */
           const enriched = await Promise.all(
-            baseApps.map(async a => {
+            baseApps.map(async (a) => {
               if (a.photoURL && a.resumeURL) return a;
               try {
                 let uSnap = await getDoc(doc(db, 'users', a.userId));
                 if (!uSnap.exists()) {
-                  const qs = await getDocs(query(collection(db, 'users'), where('uid', '==', a.userId)));
+                  /* búsqueda por uid alternativo */
+                  const qs = await getDocs(
+                    query(
+                      collection(db, 'users'),
+                      where('uid', '==', a.userId)
+                    )
+                  );
                   if (!qs.empty) uSnap = qs.docs[0];
                 }
                 if (uSnap.exists()) {
@@ -184,7 +208,12 @@ export default function MyJobs() {
                     ...a,
                     photoURL: a.photoURL || u.photoURL || '',
                     description: a.description || u.description || '',
-                    resumeURL: a.resumeURL || u.cvURL || u.resumeURL || u.cv || '',
+                    resumeURL:
+                      a.resumeURL ||
+                      u.cvURL ||
+                      u.resumeURL ||
+                      u.cv ||
+                      '',
                   };
                 }
               } catch (_) {}
@@ -201,7 +230,7 @@ export default function MyJobs() {
           setLoadingApplicants(false);
         }
       },
-      err => {
+      (err) => {
         console.error(err);
         Alert.alert('Error', 'No se pudieron cargar postulantes.');
         setLoadingApplicants(false);
@@ -220,12 +249,14 @@ export default function MyJobs() {
     setLoadingApplicants(false);
   };
 
-  /* --- cambio estado postulante --- */
-  const changeStatus = async (app: Applicant, status: string) => {
+  /* --- cambio de estado del postulante --- */
+  const changeStatus = async (app: Applicant, status: Applicant['status']) => {
     try {
       await updateDoc(doc(db, 'applications', app.appId), { status });
       showFeedback(
-        status === 'rejected' ? 'Postulante rechazado' : 'Postulante marcado para entrevista',
+        status === 'rejected'
+          ? 'Postulante rechazado'
+          : 'Postulante marcado para entrevista',
         status === 'rejected' ? '#e53935' : ['#5A40EA', '#EE805F']
       );
       setSelectedApplicant(null);
@@ -281,7 +312,10 @@ export default function MyJobs() {
   const saveEdit = async () => {
     if (!editJob) return;
     try {
-      const reqs = editFields.requirementsText.split(',').map(t => t.trim()).filter(Boolean);
+      const reqs = editFields.requirementsText
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
       await updateDoc(doc(db, 'jobs', editJob.id), {
         title: editFields.title,
         pay: editFields.pay,
@@ -294,36 +328,61 @@ export default function MyJobs() {
     }
   };
 
-  /* --- render tarjetas de job --- */
+  /* --- render tarjeta de job --- */
   const renderJob = ({ item }: { item: Job }) => (
-    <TouchableOpacity style={s.cardWrapper} activeOpacity={0.8} onPress={() => openJob(item)}>
-      <ImageBackground source={{ uri: item.imageUrl }} style={s.card} imageStyle={s.cardImage}>
+    <TouchableOpacity
+      style={s.cardWrapper}
+      activeOpacity={0.8}
+      onPress={() => openJob(item)}
+    >
+      <ImageBackground
+        source={{ uri: item.imageUrl }}
+        style={s.card}
+        imageStyle={s.cardImage}
+      >
         <View style={s.cardOverlay}>
           <Text style={s.title}>{item.title}</Text>
-          <Text style={s.desc} numberOfLines={2}>{item.description}</Text>
-          <Text style={s.subtitle}>{item.duration} • {item.pay}</Text>
+          <Text style={s.desc} numberOfLines={2}>
+            {item.description}
+          </Text>
+          <Text style={s.subtitle}>
+            {item.duration} • {item.pay}
+          </Text>
           <View style={s.row}>
             <Button title="Editar" onPress={() => handleEdit(item)} />
-            <Button title="Eliminar" color="red" onPress={() => deleteJob(item.id)} />
+            <Button
+              title="Eliminar"
+              color="red"
+              onPress={() => deleteJob(item.id)}
+            />
           </View>
         </View>
       </ImageBackground>
     </TouchableOpacity>
   );
 
-  /* --- header detalle job --- */
+  /* --- cabecera detalle job --- */
   const JobDetailHeader = () => {
     if (!selectedJob) return null;
     return (
       <>
-        {selectedJob.imageUrl && <Image source={{ uri: selectedJob.imageUrl }} style={s.detailImage} />}
+        {selectedJob.imageUrl && (
+          <Image
+            source={{ uri: selectedJob.imageUrl }}
+            style={s.detailImage}
+          />
+        )}
         <Text style={s.modalTitle}>{selectedJob.title}</Text>
         <Text style={s.detailDescription}>{selectedJob.description}</Text>
         <Text style={s.detailText}>Salario: {selectedJob.pay}</Text>
         <Text style={s.detailText}>Duración: {selectedJob.duration}</Text>
         <View style={s.detailList}>
           <Text style={s.detailText}>Requisitos:</Text>
-          {selectedJob.requirements.map((r, i) => <Text key={i} style={s.detailText}>• {r}</Text>)}
+          {selectedJob.requirements.map((r, i) => (
+            <Text key={i} style={s.detailText}>
+              • {r}
+            </Text>
+          ))}
         </View>
         <MapView
           style={s.detailMap}
@@ -335,10 +394,12 @@ export default function MyJobs() {
             longitudeDelta: 0.05,
           }}
         >
-          <Marker coordinate={{
-            latitude: selectedJob.latitude ?? 4.711,
-            longitude: selectedJob.longitude ?? -74.0721,
-          }} />
+          <Marker
+            coordinate={{
+              latitude: selectedJob.latitude ?? 4.711,
+              longitude: selectedJob.longitude ?? -74.0721,
+            }}
+          />
         </MapView>
         <Text style={[s.modalTitle, { marginTop: 12 }]}>Postulantes</Text>
       </>
@@ -347,13 +408,23 @@ export default function MyJobs() {
 
   /* --- render postulante --- */
   const renderApplicant = ({ item }: { item: Applicant }) => (
-    <TouchableOpacity style={s.appItem} onPress={() => setSelectedApplicant(item)}>
-      {item.photoURL
-        ? <Image source={{ uri: item.photoURL }} style={s.appAvatar} />
-        : <Ionicons name="person-circle" size={48} color="#bbb" style={s.appAvatar} />}
+    <TouchableOpacity
+      style={s.appItem}
+      onPress={() => setSelectedApplicant(item)}
+    >
+      {item.photoURL ? (
+        <Image source={{ uri: item.photoURL }} style={s.appAvatar} />
+      ) : (
+        <Ionicons
+          name="person-circle"
+          size={48}
+          color="#bbb"
+          style={s.appAvatar}
+        />
+      )}
       <View style={{ flex: 1 }}>
         <Text style={s.appName}>{item.name}</Text>
-        <Text style={s.appemail}>{item.email}</Text>
+        <Text style={s.appEmail}>{item.email}</Text>
       </View>
       <Text style={badgeStyle(item.status)}>{item.status.toUpperCase()}</Text>
     </TouchableOpacity>
@@ -365,15 +436,20 @@ export default function MyJobs() {
       {jobs.length === 0 ? (
         <View style={s.noJobsContainer}>
           <Text style={s.noJobsText}>
-            ¡Aún no tienes trabajos publicados!{'\n'}Presiona “Publicar” para crear uno.
+            ¡Aún no tienes trabajos publicados!{'\n'}Presiona “Publicar” para
+            crear uno.
           </Text>
         </View>
       ) : (
-        <FlatList data={jobs} keyExtractor={j => j.id} renderItem={renderJob} />
+        <FlatList data={jobs} keyExtractor={(j) => j.id} renderItem={renderJob} />
       )}
 
       {/* ---- Modal detalle job ---- */}
-      <Modal visible={!!selectedJob} animationType="slide" onRequestClose={closeJobModal}>
+      <Modal
+        visible={!!selectedJob}
+        animationType="slide"
+        onRequestClose={closeJobModal}
+      >
         <SafeAreaView style={s.modalContainer}>
           <TouchableOpacity style={s.backButton} onPress={closeJobModal}>
             <Ionicons name="arrow-back" size={24} color="#333" />
@@ -381,56 +457,129 @@ export default function MyJobs() {
 
           {/* feedback */}
           {feedback.visible && (
-            <Animated.View style={[s.feedbackInModal, { opacity: feedbackOpacity }]}>
-              {Array.isArray(feedback.color)
-                ? <LinearGradient colors={feedback.color as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[StyleSheet.absoluteFill, { borderRadius: 20 }]} />
-                : <View style={[StyleSheet.absoluteFill, { backgroundColor: feedback.color as string, borderRadius: 20 }]} />}
+            <Animated.View
+              style={[s.feedbackInModal, { opacity: feedbackOpacity }]}
+            >
+              {Array.isArray(feedback.color) ? (
+                <LinearGradient
+                  colors={feedback.color as any}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[StyleSheet.absoluteFill, { borderRadius: 20 }]}
+                />
+              ) : (
+                <View
+                  style={[
+                    StyleSheet.absoluteFill,
+                    {
+                      backgroundColor: feedback.color as string,
+                      borderRadius: 20,
+                    },
+                  ]}
+                />
+              )}
               <Text style={s.feedbackText}>{feedback.text}</Text>
             </Animated.View>
           )}
 
           <View style={s.modalContent}>
-            {selectedJob && (
-              selectedApplicant ? (
+            {selectedJob &&
+              (selectedApplicant ? (
                 /* ---- detalle de un postulante ---- */
                 <ScrollView contentContainerStyle={{ padding: 20 }}>
                   <View style={s.appDetailCard}>
-                    {selectedApplicant.photoURL
-                      ? <Image source={{ uri: selectedApplicant.photoURL }} style={s.appPhoto} />
-                      : <Ionicons name="person-circle" size={180} color="#bbb" style={s.appPhoto} />}
+                    {selectedApplicant.photoURL ? (
+                      <Image
+                        source={{ uri: selectedApplicant.photoURL }}
+                        style={s.appPhoto}
+                      />
+                    ) : (
+                      <Ionicons
+                        name="person-circle"
+                        size={180}
+                        color="#bbb"
+                        style={s.appPhoto}
+                      />
+                    )}
                     <Text style={s.detailName}>{selectedApplicant.name}</Text>
-                    <Text style={s.detailText}>Correo: {selectedApplicant.email}</Text>
-                    {selectedApplicant.description && <Text style={s.detailText}>{selectedApplicant.description}</Text>}
+                    <Text style={s.detailText}>
+                      Correo: {selectedApplicant.email}
+                    </Text>
+                    {selectedApplicant.description && (
+                      <Text style={s.detailText}>
+                        {selectedApplicant.description}
+                      </Text>
+                    )}
 
                     {/* CV */}
-                    {selectedApplicant.resumeURL
-                      ? (
-                        <TouchableOpacity style={s.cvBox} onPress={() => Linking.openURL(selectedApplicant.resumeURL!)}>
-                          <Ionicons name="document-attach-outline" size={28} color="#E23D3D" />
-                          <Text style={s.cvName}>Ver CV (PDF)</Text>
-                        </TouchableOpacity>
-                      )
-                      : <Text style={s.noCvText}>Sin hoja de vida</Text>}
+                    {selectedApplicant.resumeURL ? (
+                      <TouchableOpacity
+                        style={s.cvBox}
+                        onPress={() =>
+                          Linking.openURL(selectedApplicant.resumeURL!)
+                        }
+                      >
+                        <Ionicons
+                          name="document-attach-outline"
+                          size={28}
+                          color="#E23D3D"
+                        />
+                        <Text style={s.cvName}>Ver CV (PDF)</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={s.noCvText}>Sin hoja de vida</Text>
+                    )}
 
                     <View style={s.divider} />
 
                     {/* botones */}
                     {schedulerActive ? (
                       <>
-                        <TouchableOpacity style={s.input} onPress={() => setPicker({ visible: true, mode: 'date' })}>
-                          <Text style={{ color: scheduleModal.date ? '#000' : '#888' }}>{scheduleModal.date || 'Elegir fecha'}</Text>
+                        <TouchableOpacity
+                          style={s.input}
+                          onPress={() =>
+                            setPicker({ visible: true, mode: 'date' })
+                          }
+                        >
+                          <Text
+                            style={{
+                              color: scheduleModal.date ? '#000' : '#888',
+                            }}
+                          >
+                            {scheduleModal.date || 'Elegir fecha'}
+                          </Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={s.input} onPress={() => setPicker({ visible: true, mode: 'time' })}>
-                          <Text style={{ color: scheduleModal.time ? '#000' : '#888' }}>{scheduleModal.time || 'Elegir hora'}</Text>
+                        <TouchableOpacity
+                          style={s.input}
+                          onPress={() =>
+                            setPicker({ visible: true, mode: 'time' })
+                          }
+                        >
+                          <Text
+                            style={{
+                              color: scheduleModal.time ? '#000' : '#888',
+                            }}
+                          >
+                            {scheduleModal.time || 'Elegir hora'}
+                          </Text>
                         </TouchableOpacity>
                         <View style={s.detailButtons}>
-                          <Button title="Cancelar" onPress={() => setSchedulerActive(false)} />
+                          <Button
+                            title="Cancelar"
+                            onPress={() => setSchedulerActive(false)}
+                          />
                           <Button title="Guardar" onPress={scheduleInterview} />
                         </View>
                       </>
                     ) : (
                       <View style={s.detailButtons}>
-                        <Button title="Rechazar" color="#e53935" onPress={() => changeStatus(selectedApplicant, 'rejected')} />
+                        <Button
+                          title="Rechazar"
+                          color="#e53935"
+                          onPress={() =>
+                            changeStatus(selectedApplicant, 'rejected')
+                          }
+                        />
                         <Button
                           title="Entrevista"
                           color="#fb8c00"
@@ -446,21 +595,27 @@ export default function MyJobs() {
                         />
                       </View>
                     )}
-                    <Button title="Volver a lista" onPress={() => setSelectedApplicant(null)} />
+                    <Button
+                      title="Volver a lista"
+                      onPress={() => setSelectedApplicant(null)}
+                    />
                   </View>
                 </ScrollView>
               ) : loadingApplicants ? (
                 <ActivityIndicator size="large" style={{ marginTop: 40 }} />
+              ) : applicants.length === 0 ? (
+                <View style={{ alignItems: 'center', marginTop: 40 }}>
+                  <Text style={{ color: '#666' }}>Sin postulantes aún</Text>
+                </View>
               ) : (
                 <FlatList
                   data={applicants}
-                  keyExtractor={a => a.appId}
+                  keyExtractor={(a) => a.appId}
                   renderItem={renderApplicant}
                   ListHeaderComponent={JobDetailHeader}
                   contentContainerStyle={{ paddingBottom: 24 }}
                 />
-              )
-            )}
+              ))}
           </View>
 
           {/* DateTimePicker inline */}
@@ -468,23 +623,45 @@ export default function MyJobs() {
             <DateTimePicker
               value={new Date()}
               mode={picker.mode}
-              display={Platform.OS === 'ios'
-                ? picker.mode === 'date'
-                  ? 'inline'
-                  : 'spinner'
-                : 'default'}
-              style={Platform.OS === 'ios'
-                ? { width: '60%', height: 100, transform: [{ scale: 0.8 }], alignSelf: 'center' }
-                : { width: '60%', transform: [{ scale: 0.9 }], alignSelf: 'center' }}
+              display={
+                Platform.OS === 'ios'
+                  ? picker.mode === 'date'
+                    ? 'inline'
+                    : 'spinner'
+                  : 'default'
+              }
+              style={
+                Platform.OS === 'ios'
+                  ? {
+                      width: '60%',
+                      height: 100,
+                      transform: [{ scale: 0.8 }],
+                      alignSelf: 'center',
+                    }
+                  : {
+                      width: '60%',
+                      transform: [{ scale: 0.9 }],
+                      alignSelf: 'center',
+                    }
+              }
               onChange={(_, sel) => {
-                if (!sel) { setPicker({ ...picker, visible: false }); return; }
+                if (!sel) {
+                  setPicker({ ...picker, visible: false });
+                  return;
+                }
                 if (picker.mode === 'date') {
-                  setScheduleModal(p => ({ ...p, date: sel.toISOString().split('T')[0] }));
+                  setScheduleModal((p) => ({
+                    ...p,
+                    date: sel.toISOString().split('T')[0],
+                  }));
                   setPicker({ visible: false, mode: 'time' });
                 } else {
                   const hh = String(sel.getHours()).padStart(2, '0');
                   const mm = String(sel.getMinutes()).padStart(2, '0');
-                  setScheduleModal(p => ({ ...p, time: `${hh}:${mm}` }));
+                  setScheduleModal((p) => ({
+                    ...p,
+                    time: `${hh}:${mm}`,
+                  }));
                   setPicker({ visible: false, mode: 'date' });
                 }
               }}
@@ -499,15 +676,36 @@ export default function MyJobs() {
           <View style={s.editContainer}>
             <ScrollView>
               <Text style={s.modalTitle}>Editar Puesto</Text>
-              <TextInput style={s.input} placeholder="Título" value={editFields.title} onChangeText={t => setEditFields(f => ({ ...f, title: t }))} />
-              <TextInput style={s.input} placeholder="Salario" value={editFields.pay} onChangeText={t => setEditFields(f => ({ ...f, pay: t }))} />
-              <TextInput style={s.input} placeholder="Duración" value={editFields.duration} onChangeText={t => setEditFields(f => ({ ...f, duration: t }))} />
+              <TextInput
+                style={s.input}
+                placeholder="Título"
+                value={editFields.title}
+                onChangeText={(t) =>
+                  setEditFields((f) => ({ ...f, title: t }))
+                }
+              />
+              <TextInput
+                style={s.input}
+                placeholder="Salario"
+                value={editFields.pay}
+                onChangeText={(t) => setEditFields((f) => ({ ...f, pay: t }))}
+              />
+              <TextInput
+                style={s.input}
+                placeholder="Duración"
+                value={editFields.duration}
+                onChangeText={(t) =>
+                  setEditFields((f) => ({ ...f, duration: t }))
+                }
+              />
               <TextInput
                 style={[s.input, { height: 80 }]}
                 placeholder="Requisitos (separados por coma)"
                 multiline
                 value={editFields.requirementsText}
-                onChangeText={t => setEditFields(f => ({ ...f, requirementsText: t }))}
+                onChangeText={(t) =>
+                  setEditFields((f) => ({ ...f, requirementsText: t }))
+                }
               />
               <View style={s.detailButtons}>
                 <Button title="Cancelar" onPress={() => setEditJob(null)} />
@@ -521,59 +719,172 @@ export default function MyJobs() {
   );
 }
 
+/* ─── helpers ───────────────────────────── */
+const badgeStyle = (status: Applicant['status']) => [
+  s.badge,
+  status === 'pending' && s.badgePending,
+  status === 'waiting' && s.badgeWaiting,
+  status === 'accepted' && s.badgeAccepted,
+  status === 'rejected' && s.badgeRejected,
+];
+
 /* ─── estilos ───────────────────────────── */
 const s = StyleSheet.create({
-  /* … mismos estilos que antes … */
-  container: { flex: 1, backgroundColor: '#f5f5f5', paddingTop: getStatusBarHeight(true), paddingHorizontal: 16 },
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    paddingTop: getStatusBarHeight(true),
+    paddingHorizontal: 16,
+  },
   noJobsContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  noJobsText: { fontSize: 18, color: '#444', textAlign: 'center', paddingHorizontal: 20 },
-  cardWrapper: { marginVertical: 8, marginHorizontal: 8, borderRadius: 12, overflow: 'hidden', elevation: 3 },
-  card: { width: '100%', height: 180, justifyContent: 'flex-end' },
-  cardImage: { resizeMode: 'cover' },
-  cardOverlay: { backgroundColor: 'rgba(0,0,0,0.4)', padding: 12 },
-  title: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  desc: { color: '#eee', fontSize: 14, marginBottom: 4 },
-  subtitle: { color: '#eee', fontSize: 14, marginVertical: 4 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  modalContainer: { flex: 1, backgroundColor: '#f0f2f5', paddingTop: getStatusBarHeight(true) + 8 },
-  backButton: { position: 'absolute', top: getStatusBarHeight(true) + 32, left: 16, padding: 8, zIndex: 10 },
-  modalContent: { flex: 1, backgroundColor: '#fff', marginTop: getStatusBarHeight(true) + 8, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, elevation: 4 },
-  modalTitle: { fontSize: 24, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
-  detailDescription: { fontSize: 16, color: '#555', marginBottom: 12 },
-  detailText: { fontSize: 16, color: '#444', marginBottom: 8 },
-  detailList: { marginBottom: 12 },
-  detailMap: { width: '100%', height: 200, borderRadius: 12, marginBottom: 16 },
-  detailImage: { width: '100%', height: 220, borderRadius: 12, marginBottom: 16 },
-  detailName: { fontSize: 20, fontWeight: '600', textAlign: 'center', marginBottom: 10 },
-  detailButtons: { flexDirection: 'row', justifyContent: 'space-around', marginVertical: 20 },
-  appPhoto: { width: 180, height: 180, borderRadius: 90, alignSelf: 'center', marginBottom: 20, borderWidth: 2, borderColor: '#ddd' },
-  appDetailCard: { backgroundColor: '#fff', borderRadius: 12, padding: 24, elevation: 3, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
-  divider: { borderBottomWidth: 1, borderBottomColor: '#eee', marginVertical: 16 },
-  appItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#ddd' },
-  appAvatar: { width: 48, height: 48, borderRadius: 24, marginRight: 12 },
-  appName: { fontSize: 16, fontWeight: 'bold', color: '#000' },
-  appemail: { fontSize: 14, color: '#333' },
-  feedbackInModal: { position: 'absolute', top: getStatusBarHeight(true) + 60, left: 20, right: 20, borderRadius: 20, paddingVertical: 10, alignItems: 'center', elevation: 4, zIndex: 50 },
-  feedbackText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  cvBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9F9F9', borderRadius: 12, padding: 12, width: '100%', elevation: 2, marginBottom: 20 },
-  cvName: { marginLeft: 12, fontSize: 15, fontWeight: '500', color: '#333' },
-  noCvText: { fontSize: 14, color: '#666', marginBottom: 20, alignSelf: 'center' },
-  editOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  editContainer: { width: '90%', backgroundColor: '#fff', borderRadius: 12, padding: 16, maxHeight: '80%' },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, marginBottom: 12, justifyContent: 'center' },
-});
+  noJobsText: { fontSize: 18, color: '#444', textAlign: 'center' },
 
-/* badge */
-const badgeStyle = (status: string): StyleProp<TextStyle> => ({
-  paddingHorizontal: 8,
-  paddingVertical: 4,
-  borderRadius: 6,
-  color: '#fff',
-  fontSize: 12,
-  marginLeft: 12,
-  backgroundColor:
-    status === 'waiting' ? '#ffa726' :
-    status === 'accepted' ? '#66bb6a' :
-    status === 'rejected' ? '#ef5350' :
-    '#90a4ae',
+  /* tarjeta de job */
+  cardWrapper: {
+    height: 260,
+    marginBottom: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 5,
+  },
+  card: { flex: 1, justifyContent: 'flex-end' },
+  cardImage: { resizeMode: 'cover' },
+  cardOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    padding: 16,
+  },
+  title: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 4 },
+  desc: { color: '#eee', fontSize: 14, marginBottom: 4 },
+  subtitle: { color: '#ddd', fontSize: 13, marginBottom: 8 },
+  row: { flexDirection: 'row', justifyContent: 'space-between' },
+
+  /* modal general */
+  modalContainer: { flex: 1, backgroundColor: '#fff' },
+  backButton: { paddingHorizontal: 16, paddingVertical: 8 },
+  modalContent: { flex: 1 },
+
+  /* feedback */
+  feedbackInModal: {
+    position: 'absolute',
+    top: 70,
+    alignSelf: 'center',
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    elevation: 8,
+    zIndex: 10,
+  },
+  feedbackText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+
+  /* detalle de job */
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    alignSelf: 'center',
+    marginVertical: 8,
+  },
+  detailImage: { width: '100%', height: 180 },
+  detailDescription: {
+    fontSize: 15,
+    color: '#444',
+    marginHorizontal: 16,
+    marginTop: 4,
+  },
+  detailText: { fontSize: 14, color: '#555', marginHorizontal: 16 },
+  detailList: { marginHorizontal: 16, marginTop: 4 },
+  detailMap: {
+    height: 160,
+    margin: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+
+  /* listado de postulantes */
+  appItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderColor: '#eee',
+  },
+  appAvatar: { width: 48, height: 48, borderRadius: 24, marginRight: 12 },
+  appName: { fontSize: 16, fontWeight: '600', color: '#333' },
+  appEmail: { fontSize: 13, color: '#666' },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#fff',
+    overflow: 'hidden',
+  },
+  badgePending: { backgroundColor: '#616161' },
+  badgeWaiting: { backgroundColor: '#fb8c00' },
+  badgeAccepted: { backgroundColor: '#43a047' },
+  badgeRejected: { backgroundColor: '#e53935' },
+
+  /* detalle postulante */
+  appDetailCard: { alignItems: 'center' },
+  appPhoto: { width: 180, height: 180, borderRadius: 90 },
+  detailName: { fontSize: 22, fontWeight: '600', marginTop: 12 },
+  divider: {
+    width: '90%',
+    height: 1,
+    backgroundColor: '#ddd',
+    marginVertical: 16,
+  },
+  cvBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9F9F9',
+    borderRadius: 12,
+    padding: 12,
+    width: '90%',
+    elevation: 2,
+    marginTop: 12,
+  },
+  cvName: {
+    marginLeft: 12,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#333',
+  },
+  noCvText: { fontSize: 14, color: '#666', marginTop: 12 },
+
+  /* inputs */
+  input: {
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    padding: 10,
+    width: '90%',
+    alignSelf: 'center',
+    marginBottom: 10,
+  },
+  detailButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '90%',
+    alignSelf: 'center',
+    marginTop: 12,
+  },
+
+  /* edición trabajo */
+  editOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editContainer: {
+    width: '90%',
+    maxHeight: '80%',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 20,
+  },
+
+  /* spinner en lista vacía se maneja arriba */
 });
