@@ -137,13 +137,11 @@ export default function MyJobs() {
   const appsUnsubRef = useRef<(() => void) | null>(null) as React.MutableRefObject<(() => void) | null>;
 
   const openJob = async (job: Job) => {
-    /* cancela listener previo */
     if (appsUnsubRef.current) {
       appsUnsubRef.current();
       appsUnsubRef.current = null;
     }
 
-    /* carga detalles de job (por si falta algo) */
     try {
       const snap = await getDoc(doc(db, 'jobs', job.id));
       setSelectedJob(
@@ -162,7 +160,6 @@ export default function MyJobs() {
     setSelectedApplicant(null);
     setLoadingApplicants(true);
 
-    /* listener realtime de applications */
     const q = query(
       collection(db, 'applications'),
       where('jobId', '==', job.id)
@@ -186,14 +183,12 @@ export default function MyJobs() {
             } as Applicant;
           });
 
-          /* completa info faltante desde users */
           const enriched = await Promise.all(
             baseApps.map(async (a) => {
               if (a.photoURL && a.resumeURL) return a;
               try {
                 let uSnap = await getDoc(doc(db, 'users', a.userId));
                 if (!uSnap.exists()) {
-                  /* búsqueda por uid alternativo */
                   const qs = await getDocs(
                     query(
                       collection(db, 'users'),
@@ -249,7 +244,6 @@ export default function MyJobs() {
     setLoadingApplicants(false);
   };
 
-  /* --- cambio de estado del postulante --- */
   const changeStatus = async (app: Applicant, status: Applicant['status']) => {
     try {
       await updateDoc(doc(db, 'applications', app.appId), { status });
@@ -265,7 +259,6 @@ export default function MyJobs() {
     }
   };
 
-  /* --- programar entrevista --- */
   const scheduleInterview = async () => {
     const { app, date, time } = scheduleModal;
     if (!app || !date || !time) return;
@@ -284,13 +277,11 @@ export default function MyJobs() {
     }
   };
 
-  /* --- eliminar trabajo --- */
   const deleteJob = async (id: string) => {
     await deleteDoc(doc(db, 'jobs', id));
     closeJobModal();
   };
 
-  /* --- edición trabajo --- */
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [editFields, setEditFields] = useState({
     title: '',
@@ -328,7 +319,6 @@ export default function MyJobs() {
     }
   };
 
-  /* --- render tarjeta de job --- */
   const renderJob = ({ item }: { item: Job }) => (
     <TouchableOpacity
       style={s.cardWrapper}
@@ -361,7 +351,6 @@ export default function MyJobs() {
     </TouchableOpacity>
   );
 
-  /* --- cabecera detalle job --- */
   const JobDetailHeader = () => {
     if (!selectedJob) return null;
     return (
@@ -406,7 +395,6 @@ export default function MyJobs() {
     );
   };
 
-  /* --- render postulante --- */
   const renderApplicant = ({ item }: { item: Applicant }) => (
     <TouchableOpacity
       style={s.appItem}
@@ -430,7 +418,6 @@ export default function MyJobs() {
     </TouchableOpacity>
   );
 
-  /* --- render principal --- */
   return (
     <SafeAreaView style={s.container}>
       {jobs.length === 0 ? (
@@ -455,7 +442,6 @@ export default function MyJobs() {
             <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>
 
-          {/* feedback */}
           {feedback.visible && (
             <Animated.View
               style={[s.feedbackInModal, { opacity: feedbackOpacity }]}
@@ -471,10 +457,7 @@ export default function MyJobs() {
                 <View
                   style={[
                     StyleSheet.absoluteFill,
-                    {
-                      backgroundColor: feedback.color as string,
-                      borderRadius: 20,
-                    },
+                    { backgroundColor: feedback.color as string, borderRadius: 20 },
                   ]}
                 />
               )}
@@ -485,7 +468,6 @@ export default function MyJobs() {
           <View style={s.modalContent}>
             {selectedJob &&
               (selectedApplicant ? (
-                /* ---- detalle de un postulante ---- */
                 <ScrollView contentContainerStyle={{ padding: 20 }}>
                   <View style={s.appDetailCard}>
                     {selectedApplicant.photoURL ? (
@@ -511,7 +493,6 @@ export default function MyJobs() {
                       </Text>
                     )}
 
-                    {/* CV */}
                     {selectedApplicant.resumeURL ? (
                       <TouchableOpacity
                         style={s.cvBox}
@@ -532,7 +513,6 @@ export default function MyJobs() {
 
                     <View style={s.divider} />
 
-                    {/* botones */}
                     {schedulerActive ? (
                       <>
                         <TouchableOpacity
@@ -541,11 +521,7 @@ export default function MyJobs() {
                             setPicker({ visible: true, mode: 'date' })
                           }
                         >
-                          <Text
-                            style={{
-                              color: scheduleModal.date ? '#000' : '#888',
-                            }}
-                          >
+                          <Text style={{ color: scheduleModal.date ? '#000' : '#888' }}>
                             {scheduleModal.date || 'Elegir fecha'}
                           </Text>
                         </TouchableOpacity>
@@ -555,11 +531,7 @@ export default function MyJobs() {
                             setPicker({ visible: true, mode: 'time' })
                           }
                         >
-                          <Text
-                            style={{
-                              color: scheduleModal.time ? '#000' : '#888',
-                            }}
-                          >
+                          <Text style={{ color: scheduleModal.time ? '#000' : '#888' }}>
                             {scheduleModal.time || 'Elegir hora'}
                           </Text>
                         </TouchableOpacity>
@@ -602,7 +574,6 @@ export default function MyJobs() {
                   </View>
                 </ScrollView>
               ) : (
-                /* ---- lista (o vacío/spinner) y SIEMPRE la cabecera ---- */
                 <>
                   <JobDetailHeader />
 
@@ -624,7 +595,6 @@ export default function MyJobs() {
               ))}
           </View>
 
-          {/* DateTimePicker inline */}
           {picker.visible && (
             <DateTimePicker
               value={new Date()}
@@ -638,36 +608,18 @@ export default function MyJobs() {
               }
               style={
                 Platform.OS === 'ios'
-                  ? {
-                      width: '60%',
-                      height: 100,
-                      transform: [{ scale: 0.8 }],
-                      alignSelf: 'center',
-                    }
-                  : {
-                      width: '60%',
-                      transform: [{ scale: 0.9 }],
-                      alignSelf: 'center',
-                    }
+                  ? { width: '60%', height: 100, transform: [{ scale: 0.8 }], alignSelf: 'center' }
+                  : { width: '60%', transform: [{ scale: 0.9 }], alignSelf: 'center' }
               }
               onChange={(_, sel) => {
-                if (!sel) {
-                  setPicker({ ...picker, visible: false });
-                  return;
-                }
+                if (!sel) { setPicker({ ...picker, visible: false }); return; }
                 if (picker.mode === 'date') {
-                  setScheduleModal((p) => ({
-                    ...p,
-                    date: sel.toISOString().split('T')[0],
-                  }));
+                  setScheduleModal((p) => ({ ...p, date: sel.toISOString().split('T')[0] }));
                   setPicker({ visible: false, mode: 'time' });
                 } else {
                   const hh = String(sel.getHours()).padStart(2, '0');
                   const mm = String(sel.getMinutes()).padStart(2, '0');
-                  setScheduleModal((p) => ({
-                    ...p,
-                    time: `${hh}:${mm}`,
-                  }));
+                  setScheduleModal((p) => ({ ...p, time: `${hh}:${mm}` }));
                   setPicker({ visible: false, mode: 'date' });
                 }
               }}
@@ -676,7 +628,6 @@ export default function MyJobs() {
         </SafeAreaView>
       </Modal>
 
-      {/* ---- Modal edición trabajo ---- */}
       <Modal transparent animationType="fade" visible={!!editJob}>
         <View style={s.editOverlay}>
           <View style={s.editContainer}>
@@ -686,9 +637,7 @@ export default function MyJobs() {
                 style={s.input}
                 placeholder="Título"
                 value={editFields.title}
-                onChangeText={(t) =>
-                  setEditFields((f) => ({ ...f, title: t }))
-                }
+                onChangeText={(t) => setEditFields((f) => ({ ...f, title: t }))}
               />
               <TextInput
                 style={s.input}
@@ -700,18 +649,14 @@ export default function MyJobs() {
                 style={s.input}
                 placeholder="Duración"
                 value={editFields.duration}
-                onChangeText={(t) =>
-                  setEditFields((f) => ({ ...f, duration: t }))
-                }
+                onChangeText={(t) => setEditFields((f) => ({ ...f, duration: t }))}
               />
               <TextInput
                 style={[s.input, { height: 80 }]}
                 placeholder="Requisitos (separados por coma)"
                 multiline
                 value={editFields.requirementsText}
-                onChangeText={(t) =>
-                  setEditFields((f) => ({ ...f, requirementsText: t }))
-                }
+                onChangeText={(t) => setEditFields((f) => ({ ...f, requirementsText: t }))}
               />
               <View style={s.detailButtons}>
                 <Button title="Cancelar" onPress={() => setEditJob(null)} />
@@ -725,7 +670,6 @@ export default function MyJobs() {
   );
 }
 
-/* ─── helpers ───────────────────────────── */
 const badgeStyle = (status: Applicant['status']) => [
   s.badge,
   status === 'pending' && s.badgePending,
@@ -734,17 +678,14 @@ const badgeStyle = (status: Applicant['status']) => [
   status === 'rejected' && s.badgeRejected,
 ];
 
-/* ─── estilos ─────────────────────────────
-   ⚠  NO se cambió ningún valor (tamaños, paddings, alturas, colores).
-   Solo se pudo haber añadido uno o dos contenedores‐View que no
-   alteran dimensiones de la tarjeta original.
-*/
+/* ─── estilos ───────────────────────────── */
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5', paddingTop: getStatusBarHeight(true), paddingHorizontal: 16 },
   noJobsContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   noJobsText: { fontSize: 18, color: '#444', textAlign: 'center' },
 
-  cardWrapper: { height: 260, marginBottom: 20, borderRadius: 16, overflow: 'hidden', elevation: 5 },
+  /* ↓↓↓ único cambio: altura 200px ↓↓↓ */
+  cardWrapper: { height: 200, marginBottom: 20, borderRadius: 16, overflow: 'hidden', elevation: 5 },
   card: { flex: 1, justifyContent: 'flex-end' },
   cardImage: { resizeMode: 'cover' },
   cardOverlay: { backgroundColor: 'rgba(0,0,0,0.55)', padding: 16 },
