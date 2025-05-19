@@ -115,16 +115,25 @@ export default function Feed() {
 
   const apply = async (job: Job) => {
     try {
-      await setDoc(doc(db, 'applications', `${job.id}_${auth.currentUser!.uid}`), {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      await setDoc(doc(db, 'applications', `${job.id}_${user.uid}`), {
         jobId: job.id,
-        userId: auth.currentUser!.uid,
+        userId: user.uid,
         status: 'pending',
         createdAt: Date.now(),
         title: job.title,
         description: job.description,
+        name: user.displayName || 'Anónimo',       // 🔁 nombre que espera tu render
+        email: user.email || 'Sin correo',         // 🔁 correo que espera tu render
+        photoURL: user.photoURL || null,           // 🔁 imagen si está disponible
       });
-    } catch {}
+    } catch (error) {
+      console.error('Error al postularse:', error);
+    }
   };
+
 
   /* ---------- UI ---------- */
   if (loading) {
