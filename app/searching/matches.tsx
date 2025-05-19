@@ -1,5 +1,5 @@
 // Matches.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,8 @@ import {
   updateDoc,
   deleteDoc,                   // ⬅️ NEW
 } from 'firebase/firestore';
+
+import * as Notifications from 'expo-notifications';
 
 type App = {
   id: string;
@@ -74,6 +76,18 @@ const translateStatus = (s: string) => {
 };
 
 export default function Matches() {
+  // ---- notificaciones ----
+  const notifiedRef = useRef<Set<string>>(new Set());
+
+  // Solicitar permiso al iniciar el componente
+  useEffect(() => {
+    (async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        console.warn('Permiso de notificaciones no concedido');
+      }
+    })();
+  }, []);
   const [apps, setApps] = useState<App[]>([]);
   const [selected, setSelected] = useState<App | null>(null);
 
@@ -120,6 +134,23 @@ export default function Matches() {
     });
     return () => unsub();
   }, []);
+
+  /* ---------- programa notificación de entrevista ---------- */
+  useEffect(() => {
+    apps.forEach(async (app) => {
+      if (app.interviewAt && !notifiedRef.current.has(app.id)) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: 'Nueva entrevista',
+            body: 'Tienes una nueva entrevista',
+            sound: 'default',
+          },
+          trigger: null, // null => enviar inmediatamente
+        });
+        notifiedRef.current.add(app.id);
+      }
+    });
+  }, [apps]);
 
   /* ---------- cancela (elimina) la postulación ---------- */
   const handleCancel = (app: App) => {
