@@ -63,7 +63,7 @@ type Applicant = {
 
 /* ─── componente principal ───────────────── */
 export default function MyJobs() {
-  /* --- estado principal --- */
+  /* --- estado --- */
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
@@ -81,10 +81,10 @@ export default function MyJobs() {
     time: string;
   }>({ visible: false, app: null, date: '', time: '' });
   const [schedulerActive, setSchedulerActive] = useState(false);
-  const [picker, setPicker] = useState<{
-    visible: boolean;
-    mode: 'date' | 'time';
-  }>({ visible: false, mode: 'date' });
+  const [picker, setPicker] = useState<{ visible: boolean; mode: 'date' | 'time' }>({
+    visible: false,
+    mode: 'date',
+  });
 
   /* --- feedback (banner) --- */
   const [feedback, setFeedback] = useState<{
@@ -112,7 +112,7 @@ export default function MyJobs() {
     });
   };
 
-  /* --- listener trabajos del hiring --- */
+  /* --- cargar trabajos del hiring --- */
   useEffect(() => {
     const q = query(
       collection(db, 'jobs'),
@@ -137,20 +137,18 @@ export default function MyJobs() {
   const appsUnsubRef = useRef<(() => void) | null>(null) as React.MutableRefObject<(() => void) | null>;
 
   const openJob = async (job: Job) => {
+    /* cancelar listener previo */
     if (appsUnsubRef.current) {
       appsUnsubRef.current();
       appsUnsubRef.current = null;
     }
 
+    /* asegura que tengas la descripción más reciente */
     try {
       const snap = await getDoc(doc(db, 'jobs', job.id));
       setSelectedJob(
         snap.exists()
-          ? {
-              ...job,
-              ...(snap.data() as any),
-              description: (snap.data() as any).description ?? job.description,
-            }
+          ? { ...job, ...(snap.data() as any) }
           : job
       );
     } catch (_) {
@@ -168,7 +166,7 @@ export default function MyJobs() {
       q,
       async (snap) => {
         try {
-          const baseApps = snap.docs.map((d) => {
+          const base = snap.docs.map((d) => {
             const data = d.data() as any;
             return {
               appId: d.id,
@@ -184,16 +182,13 @@ export default function MyJobs() {
           });
 
           const enriched = await Promise.all(
-            baseApps.map(async (a) => {
+            base.map(async (a) => {
               if (a.photoURL && a.resumeURL) return a;
               try {
                 let uSnap = await getDoc(doc(db, 'users', a.userId));
                 if (!uSnap.exists()) {
                   const qs = await getDocs(
-                    query(
-                      collection(db, 'users'),
-                      where('uid', '==', a.userId)
-                    )
+                    query(collection(db, 'users'), where('uid', '==', a.userId))
                   );
                   if (!qs.empty) uSnap = qs.docs[0];
                 }
@@ -204,11 +199,7 @@ export default function MyJobs() {
                     photoURL: a.photoURL || u.photoURL || '',
                     description: a.description || u.description || '',
                     resumeURL:
-                      a.resumeURL ||
-                      u.cvURL ||
-                      u.resumeURL ||
-                      u.cv ||
-                      '',
+                      a.resumeURL || u.cvURL || u.resumeURL || u.cv || '',
                   };
                 }
               } catch (_) {}
@@ -244,6 +235,7 @@ export default function MyJobs() {
     setLoadingApplicants(false);
   };
 
+  /* --- cambiar estado de postulante --- */
   const changeStatus = async (app: Applicant, status: Applicant['status']) => {
     try {
       await updateDoc(doc(db, 'applications', app.appId), { status });
@@ -259,6 +251,7 @@ export default function MyJobs() {
     }
   };
 
+  /* --- programar entrevista --- */
   const scheduleInterview = async () => {
     const { app, date, time } = scheduleModal;
     if (!app || !date || !time) return;
@@ -277,11 +270,13 @@ export default function MyJobs() {
     }
   };
 
+  /* --- eliminar trabajo --- */
   const deleteJob = async (id: string) => {
     await deleteDoc(doc(db, 'jobs', id));
     closeJobModal();
   };
 
+  /* --- edición de trabajo --- */
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [editFields, setEditFields] = useState({
     title: '',
@@ -319,6 +314,7 @@ export default function MyJobs() {
     }
   };
 
+  /* --- render tarjeta --- */
   const renderJob = ({ item }: { item: Job }) => (
     <TouchableOpacity
       style={s.cardWrapper}
@@ -351,15 +347,13 @@ export default function MyJobs() {
     </TouchableOpacity>
   );
 
+  /* --- cabecera detalle --- */
   const JobDetailHeader = () => {
     if (!selectedJob) return null;
     return (
       <>
         {selectedJob.imageUrl && (
-          <Image
-            source={{ uri: selectedJob.imageUrl }}
-            style={s.detailImage}
-          />
+          <Image source={{ uri: selectedJob.imageUrl }} style={s.detailImage} />
         )}
         <Text style={s.modalTitle}>{selectedJob.title}</Text>
         <Text style={s.detailDescription}>{selectedJob.description}</Text>
@@ -395,6 +389,7 @@ export default function MyJobs() {
     );
   };
 
+  /* --- render postulante --- */
   const renderApplicant = ({ item }: { item: Applicant }) => (
     <TouchableOpacity
       style={s.appItem}
@@ -418,13 +413,15 @@ export default function MyJobs() {
     </TouchableOpacity>
   );
 
+  /* --- render principal --- */
   return (
     <SafeAreaView style={s.container}>
       {jobs.length === 0 ? (
         <View style={s.noJobsContainer}>
           <Text style={s.noJobsText}>
-            ¡Aún no tienes trabajos publicados!{'\n'}Presiona “Publicar” para
-            crear uno.
+            ¡Aún no tienes trabajos publicados!
+            {'\n'}
+            Presiona “Publicar” para crear uno.
           </Text>
         </View>
       ) : (
@@ -442,6 +439,7 @@ export default function MyJobs() {
             <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>
 
+          {/* banner feedback */}
           {feedback.visible && (
             <Animated.View
               style={[s.feedbackInModal, { opacity: feedbackOpacity }]}
@@ -468,6 +466,7 @@ export default function MyJobs() {
           <View style={s.modalContent}>
             {selectedJob &&
               (selectedApplicant ? (
+                /* ---- detalle postulante ---- */
                 <ScrollView contentContainerStyle={{ padding: 20 }}>
                   <View style={s.appDetailCard}>
                     {selectedApplicant.photoURL ? (
@@ -517,9 +516,7 @@ export default function MyJobs() {
                       <>
                         <TouchableOpacity
                           style={s.input}
-                          onPress={() =>
-                            setPicker({ visible: true, mode: 'date' })
-                          }
+                          onPress={() => setPicker({ visible: true, mode: 'date' })}
                         >
                           <Text style={{ color: scheduleModal.date ? '#000' : '#888' }}>
                             {scheduleModal.date || 'Elegir fecha'}
@@ -527,19 +524,14 @@ export default function MyJobs() {
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={s.input}
-                          onPress={() =>
-                            setPicker({ visible: true, mode: 'time' })
-                          }
+                          onPress={() => setPicker({ visible: true, mode: 'time' })}
                         >
                           <Text style={{ color: scheduleModal.time ? '#000' : '#888' }}>
                             {scheduleModal.time || 'Elegir hora'}
                           </Text>
                         </TouchableOpacity>
                         <View style={s.detailButtons}>
-                          <Button
-                            title="Cancelar"
-                            onPress={() => setSchedulerActive(false)}
-                          />
+                          <Button title="Cancelar" onPress={() => setSchedulerActive(false)} />
                           <Button title="Guardar" onPress={scheduleInterview} />
                         </View>
                       </>
@@ -548,9 +540,7 @@ export default function MyJobs() {
                         <Button
                           title="Rechazar"
                           color="#e53935"
-                          onPress={() =>
-                            changeStatus(selectedApplicant, 'rejected')
-                          }
+                          onPress={() => changeStatus(selectedApplicant, 'rejected')}
                         />
                         <Button
                           title="Entrevista"
@@ -567,6 +557,7 @@ export default function MyJobs() {
                         />
                       </View>
                     )}
+
                     <Button
                       title="Volver a lista"
                       onPress={() => setSelectedApplicant(null)}
@@ -574,6 +565,7 @@ export default function MyJobs() {
                   </View>
                 </ScrollView>
               ) : (
+                /* ---- lista de postulantes + header ---- */
                 <>
                   <JobDetailHeader />
 
@@ -595,6 +587,7 @@ export default function MyJobs() {
               ))}
           </View>
 
+          {/* DateTimePicker inline */}
           {picker.visible && (
             <DateTimePicker
               value={new Date()}
@@ -612,7 +605,10 @@ export default function MyJobs() {
                   : { width: '60%', transform: [{ scale: 0.9 }], alignSelf: 'center' }
               }
               onChange={(_, sel) => {
-                if (!sel) { setPicker({ ...picker, visible: false }); return; }
+                if (!sel) {
+                  setPicker({ ...picker, visible: false });
+                  return;
+                }
                 if (picker.mode === 'date') {
                   setScheduleModal((p) => ({ ...p, date: sel.toISOString().split('T')[0] }));
                   setPicker({ visible: false, mode: 'time' });
@@ -628,6 +624,7 @@ export default function MyJobs() {
         </SafeAreaView>
       </Modal>
 
+      {/* ---- Modal edición trabajo ---- */}
       <Modal transparent animationType="fade" visible={!!editJob}>
         <View style={s.editOverlay}>
           <View style={s.editContainer}>
@@ -656,7 +653,9 @@ export default function MyJobs() {
                 placeholder="Requisitos (separados por coma)"
                 multiline
                 value={editFields.requirementsText}
-                onChangeText={(t) => setEditFields((f) => ({ ...f, requirementsText: t }))}
+                onChangeText={(t) =>
+                  setEditFields((f) => ({ ...f, requirementsText: t }))
+                }
               />
               <View style={s.detailButtons}>
                 <Button title="Cancelar" onPress={() => setEditJob(null)} />
@@ -670,6 +669,7 @@ export default function MyJobs() {
   );
 }
 
+/* ─── helpers ───────────────────────────── */
 const badgeStyle = (status: Applicant['status']) => [
   s.badge,
   status === 'pending' && s.badgePending,
@@ -680,25 +680,49 @@ const badgeStyle = (status: Applicant['status']) => [
 
 /* ─── estilos ───────────────────────────── */
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5', paddingTop: getStatusBarHeight(true), paddingHorizontal: 16 },
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    paddingTop: getStatusBarHeight(true),
+    paddingHorizontal: 16,
+  },
   noJobsContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   noJobsText: { fontSize: 18, color: '#444', textAlign: 'center' },
 
-  /* ↓↓↓ único cambio: altura 200px ↓↓↓ */
-  cardWrapper: { height: 200, marginBottom: 20, borderRadius: 16, overflow: 'hidden', elevation: 5 },
-  card: { flex: 1, justifyContent: 'flex-end' },
+  /* --- Tarjeta (igual a Matches) --- */
+  cardWrapper: {
+    marginVertical: 8,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 3,
+  },
+  card: {
+    width: '100%',
+    height: 190,
+    justifyContent: 'flex-end',
+  },
   cardImage: { resizeMode: 'cover' },
-  cardOverlay: { backgroundColor: 'rgba(0,0,0,0.55)', padding: 16 },
-  title: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 4 },
-  desc: { color: '#eee', fontSize: 14, marginBottom: 4 },
-  subtitle: { color: '#ddd', fontSize: 13, marginBottom: 8 },
+  cardOverlay: { backgroundColor: 'rgba(0,0,0,0.4)', padding: 12 },
+  title: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginTop: 4 },
+  desc: { color: '#eee', fontSize: 14, marginVertical: 4 },
+  subtitle: { color: '#eee', fontSize: 14, marginTop: 4 },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
 
+  /* --- Modal detalle --- */
   modalContainer: { flex: 1, backgroundColor: '#fff' },
   backButton: { paddingHorizontal: 16, paddingVertical: 8 },
   modalContent: { flex: 1 },
 
-  feedbackInModal: { position: 'absolute', top: 70, alignSelf: 'center', borderRadius: 20, paddingHorizontal: 24, paddingVertical: 10, elevation: 8, zIndex: 10 },
+  feedbackInModal: {
+    position: 'absolute',
+    top: 70,
+    alignSelf: 'center',
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    elevation: 8,
+    zIndex: 10,
+  },
   feedbackText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 
   modalTitle: { fontSize: 22, fontWeight: '700', alignSelf: 'center', marginVertical: 8 },
@@ -708,7 +732,15 @@ const s = StyleSheet.create({
   detailList: { marginHorizontal: 16, marginTop: 4 },
   detailMap: { height: 160, margin: 16, borderRadius: 12, overflow: 'hidden' },
 
-  appItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderBottomWidth: 1, borderColor: '#eee' },
+  /* --- lista de postulantes --- */
+  appItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderColor: '#eee',
+  },
   appAvatar: { width: 48, height: 48, borderRadius: 24, marginRight: 12 },
   appName: { fontSize: 16, fontWeight: '600', color: '#333' },
   appEmail: { fontSize: 13, color: '#666' },
@@ -718,6 +750,7 @@ const s = StyleSheet.create({
   badgeAccepted: { backgroundColor: '#43a047' },
   badgeRejected: { backgroundColor: '#e53935' },
 
+  /* --- detalle postulante --- */
   appDetailCard: { alignItems: 'center' },
   appPhoto: { width: 180, height: 180, borderRadius: 90 },
   detailName: { fontSize: 22, fontWeight: '600', marginTop: 12 },
@@ -726,9 +759,11 @@ const s = StyleSheet.create({
   cvName: { marginLeft: 12, fontSize: 15, fontWeight: '500', color: '#333' },
   noCvText: { fontSize: 14, color: '#666', marginTop: 12 },
 
+  /* --- inputs / botones --- */
   input: { borderWidth: 1, borderColor: '#DDD', borderRadius: 8, padding: 10, width: '90%', alignSelf: 'center', marginBottom: 10 },
   detailButtons: { flexDirection: 'row', justifyContent: 'space-between', width: '90%', alignSelf: 'center', marginTop: 12 },
 
+  /* --- edición trabajo --- */
   editOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   editContainer: { width: '90%', maxHeight: '80%', backgroundColor: '#FFF', borderRadius: 12, padding: 20 },
 });
