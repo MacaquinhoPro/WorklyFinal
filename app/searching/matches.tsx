@@ -43,7 +43,7 @@ type App = {
   imageUrl: string;
   latitude?: number;
   longitude?: number;
-  interviewAt?: number | null;
+  interviewAt?: number | null;      // ← fecha/hora de entrevista (epoch ms)
 };
 
 type Job = {
@@ -84,9 +84,10 @@ const translateStatus = (s: string) => {
 /* ============================================================ */
 export default function Matches() {
   /* ---------- notificaciones ---------- */
+  // ids de notificaciones ya programadas por app.id
   const notifIdsRef = useRef<Record<string, string>>({});
 
-  // handler global
+  // Handler global (muestra alerta + sonido)
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -95,36 +96,19 @@ export default function Matches() {
     }),
   });
 
-  // prepara canal Android
-  const [androidChannelId, setAndroidChannelId] = useState('interviews');
-
+  // Crear canal para Android una sola vez
   useEffect(() => {
     (async () => {
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('interviews', {
+          name: 'Entrevistas',
+          importance: Notifications.AndroidImportance.DEFAULT,
+          sound: 'default',
+        });
+      }
       const { status } = await Notifications.requestPermissionsAsync();
       if (status !== 'granted') {
         console.warn('Permiso de notificaciones no concedido');
-      }
-
-      if (Platform.OS === 'android') {
-        // si el canal existe con baja importancia no podemos cambiarlo -> creamos otro
-        const existing = await Notifications.getNotificationChannelAsync(
-          'interviews'
-        );
-
-        let channelId = 'interviews';
-        if (!existing || existing.importance < Notifications.AndroidImportance.HIGH) {
-          channelId =
-            existing && existing.id === 'interviews' ? 'interviews_high' : 'interviews';
-          await Notifications.setNotificationChannelAsync(channelId, {
-            name: 'Entrevistas',
-            importance: Notifications.AndroidImportance.HIGH, // heads-up
-            sound: 'default',
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#FF231F7C',
-            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-          });
-        }
-        setAndroidChannelId(channelId);
       }
     })();
   }, []);
@@ -134,7 +118,7 @@ export default function Matches() {
   const [selected, setSelected] = useState<App | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /* ---------- carga tiempo real ---------- */
+  /* ---------- carga en tiempo real ---------- */
   useEffect(() => {
     const q = query(
       collection(db, 'applications'),
@@ -145,10 +129,12 @@ export default function Matches() {
         snap.docs.map(async (d) => {
           const data = d.data() as App;
 
+          // consultar datos del trabajo
           const jobSnap = await getDoc(doc(db, 'jobs', data.jobId));
           if (!jobSnap.exists()) return null;
           const job = jobSnap.data() as Job;
 
+          // asegurar que siempre tengamos título/descrición guardados
           const title = data.title || job.title;
           const description = data.description || job.description;
           if (!data.title || !data.description) {
@@ -184,7 +170,7 @@ export default function Matches() {
       for (const app of apps) {
         const storedId = notifIdsRef.current[app.id];
 
-        // Si hay entrevista futura -> programar si no existe
+        // 1) Si hay entrevista futura y no está programada → programar
         if (
           app.interviewAt &&
           app.interviewAt > Date.now() &&
@@ -193,17 +179,20 @@ export default function Matches() {
           const notifId = await Notifications.scheduleNotificationAsync({
             content: {
               title: 'Entrevista programada',
-              body: `Entrevista para "${app.title}" a las ${fmt(app.interviewAt)}`,
+              body: `Entrevista para "${app.title}" a las ${fmt(
+                app.interviewAt
+              )}`,
               sound: 'default',
-              priority: Notifications.AndroidNotificationPriority.HIGH,
-              vibrate: [0, 250, 250, 250],
             },
-            trigger: { date: new Date(app.interviewAt), channelId: androidChannelId },
+            trigger: {
+              channelId: 'interviews',
+              date: new Date(app.interviewAt),
+            } as any,
           });
           notifIdsRef.current[app.id] = notifId;
         }
 
-        // Si ya no hay entrevista o está en pasado -> cancelar
+        // 2) Si ya no hay entrevista o está en pasado → cancelar y limpiar
         if (
           (!app.interviewAt || app.interviewAt <= Date.now()) &&
           storedId
@@ -213,7 +202,7 @@ export default function Matches() {
         }
       }
     })();
-  }, [apps, androidChannelId]);
+  }, [apps]);
 
   /* ---------- cancelar postulación ---------- */
   const handleCancel = (app: App) => {
@@ -227,9 +216,12 @@ export default function Matches() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // cancelar notificación pendiente (si la hay)
               const storedId = notifIdsRef.current[app.id];
               if (storedId) {
-                await Notifications.cancelScheduledNotificationAsync(storedId);
+                await Notifications.cancelScheduledNotificationAsync(
+                  storedId
+                );
                 delete notifIdsRef.current[app.id];
               }
               await deleteDoc(doc(db, 'applications', app.id));
@@ -258,6 +250,8 @@ export default function Matches() {
         <View style={s.cardOverlay}>
           <View style={s.cardHeader}>
             <Text style={s.status}>{translateStatus(item.status)}</Text>
+
+            {/* Botón cancelar */}
             <TouchableOpacity
               onPress={() => handleCancel(item)}
               style={s.cancelBtn}
