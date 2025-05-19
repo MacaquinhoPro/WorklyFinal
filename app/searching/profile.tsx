@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import {
-  SafeAreaView, ScrollView, View, Text, Image, TouchableOpacity,
-  StyleSheet, Dimensions, Platform, TextInput, Modal, Alert,
+  SafeAreaView,
+  ScrollView,
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  Dimensions,
+  Platform,
+  TextInput,
+  Modal,
+  Alert,
+  Linking,                // ← NEW
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,7 +29,9 @@ const AVATAR_SIZE = 140;
 export default function ProfileScreen() {
   const user = auth.currentUser!;
   const [editing, setEditing] = useState(false);
-  const [displayNameState, setDisplayNameState] = useState(user.displayName || 'User');
+  const [displayNameState, setDisplayNameState] = useState(
+    user.displayName || 'User'
+  );
   const [description, setDescription] = useState('');
   const [photoURL, setPhotoURL] = useState(
     user.photoURL || 'https://via.placeholder.com/300'
@@ -46,6 +59,8 @@ export default function ProfileScreen() {
       }
     })();
   }, []);
+
+  /* ── subir CV ── */
   const uploadCV = async () => {
     const res = await DocumentPicker.getDocumentAsync({
       type: 'application/pdf',
@@ -87,7 +102,10 @@ export default function ProfileScreen() {
   const pick = async (source: 'camera' | 'gallery') => {
     const res =
       source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.8 })
+        ? await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            quality: 0.8,
+          })
         : await ImagePicker.launchImageLibraryAsync({
             allowsEditing: true,
             quality: 0.8,
@@ -100,11 +118,6 @@ export default function ProfileScreen() {
       const fileRef = ref(storage, `avatars/${user.uid}_${Date.now()}.jpg`);
       const task = uploadBytesResumable(fileRef, blob, {
         contentType: 'image/jpeg',
-      });
-      task.on('state_changed', (snap) => {
-        console.log(
-          `Upload ${(snap.bytesTransferred / snap.totalBytes) * 100}%`
-        );
       });
       await task;
       const downloadURL = await getDownloadURL(fileRef);
@@ -148,7 +161,10 @@ export default function ProfileScreen() {
               multiline
             />
             <View style={s.modalActions}>
-              <TouchableOpacity onPress={() => setEditing(false)} style={s.cancelButton}>
+              <TouchableOpacity
+                onPress={() => setEditing(false)}
+                style={s.cancelButton}
+              >
                 <Text style={s.cancelText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={handleSave} style={s.saveButton}>
@@ -174,36 +190,69 @@ export default function ProfileScreen() {
 
         <View style={[s.actionsRow, { justifyContent: 'space-evenly' }]}>
           <View style={s.actionItemCenter}>
-            <TouchableOpacity style={s.editButton} onPress={() => setEditing(true)}>
-              <MaterialCommunityIcons name="pencil-outline" size={32} color="#000" />
+            <TouchableOpacity
+              style={s.editButton}
+              onPress={() => setEditing(true)}
+            >
+              <MaterialCommunityIcons
+                name="pencil-outline"
+                size={32}
+                color="#000"
+              />
               <View style={s.dotRed} />
             </TouchableOpacity>
             <Text style={s.actionLabel}>EDITAR PERFIL</Text>
           </View>
           <View style={s.actionItemCenter}>
             <TouchableOpacity style={s.editButton} onPress={uploadCV}>
-              <MaterialCommunityIcons name="file-upload-outline" size={32} color="#000" />
+              <MaterialCommunityIcons
+                name="file-upload-outline"
+                size={32}
+                color="#000"
+              />
               {!cvURL && <View style={s.dotRed} />}
             </TouchableOpacity>
-            <Text style={s.actionLabel}>SUBIR CV</Text>
+            <Text style={s.actionLabel}>SUBIR CV</Text>
           </View>
         </View>
 
-        {/* ── Por qué elegir Workly ── */}
+        {/* —— Sección CV —— */}
+        <Text style={s.benefitsTitle}>Tu CV</Text>
+        {cvURL ? (
+          <TouchableOpacity
+            style={s.cvBox}
+            onPress={() => Linking.openURL(cvURL)}
+          >
+            <MaterialCommunityIcons
+              name="file-pdf-box"
+              size={48}
+              color="#E23D3D"
+            />
+            <Text style={s.cvName}>Ver CV (PDF)</Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={s.noCvText}>
+            Aún no has subido tu hoja de vida.
+          </Text>
+        )}
+
+        {/* —— Por qué elegir Workly —— */}
         <Text style={s.benefitsTitle}>¿Por qué elegir Workly?</Text>
-        {/* ── Carrusel de ventajas ── */}
+
+        {/* —— Carrusel —— */}
         <View style={s.carouselContainer}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             pagingEnabled
-            snapToInterval={width}            // full slide width (card + margins)
+            snapToInterval={width}
             snapToAlignment="center"
-            contentContainerStyle={{}}
             decelerationRate="fast"
-            onMomentumScrollEnd={e => {
-              const pageWidth = width; // match snapToInterval
-              const idx = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
+            onMomentumScrollEnd={(e) => {
+              const pageWidth = width;
+              const idx = Math.round(
+                e.nativeEvent.contentOffset.x / pageWidth
+              );
               setCarouselIndex(idx);
             }}
           >
@@ -223,10 +272,7 @@ export default function ProfileScreen() {
             {CARDS.map((_, i) => (
               <View
                 key={i}
-                style={[
-                  s.dot,
-                  i === carouselIndex && s.dotActive,
-                ]}
+                style={[s.dot, i === carouselIndex && s.dotActive]}
               />
             ))}
           </View>
@@ -236,7 +282,7 @@ export default function ProfileScreen() {
   );
 }
 
-/* —— estilos sin cambios ——— */
+/* —— estilos —— */
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FFF' },
   container: {
@@ -248,40 +294,113 @@ const s = StyleSheet.create({
   brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   brandText: { fontSize: 24, fontWeight: '600', marginLeft: 8 },
   avatarWrapper: {
-    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-    width: AVATAR_SIZE + 16, height: AVATAR_SIZE + 16,
-    borderRadius: (AVATAR_SIZE + 16) / 2, borderWidth: 4, borderColor: '#5A40EA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    width: AVATAR_SIZE + 16,
+    height: AVATAR_SIZE + 16,
+    borderRadius: (AVATAR_SIZE + 16) / 2,
+    borderWidth: 4,
+    borderColor: '#5A40EA',
   },
-  avatar: { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 },
+  avatar: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
+  },
   name: { fontSize: 22, fontWeight: '600', marginBottom: 24, color: '#333' },
-  description: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 24 },
+  description: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
   actionsRow: { flexDirection: 'row', width: '100%', marginBottom: 30 },
   actionItemCenter: { alignItems: 'center', flex: 1 },
   actionLabel: { fontSize: 12, color: '#666', marginTop: 6 },
   editButton: {
-    backgroundColor: '#FFF', width: 64, height: 64, borderRadius: 32,
-    justifyContent: 'center', alignItems: 'center', elevation: 4,
+    backgroundColor: '#FFF',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
   },
   dotRed: {
-    width: 10, height: 10, borderRadius: 5, backgroundColor: '#FF3B30',
-    position: 'absolute', top: 6, right: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF3B30',
+    position: 'absolute',
+    top: 6,
+    right: 6,
   },
+  /* —— CV —— */
+  cvBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9F9F9',
+    borderRadius: 12,
+    padding: 12,
+    width: '100%',
+    elevation: 2,
+    marginBottom: 20,
+  },
+  cvName: {
+    marginLeft: 12,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#333',
+  },
+  noCvText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+  },
+  /* —— Overlay y modal —— */
   overlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center', alignItems: 'center',
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  modalContent: { width: '90%', backgroundColor: '#FFF', borderRadius: 12, padding: 20 },
-  modalTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12, textAlign: 'center' },
+  modalContent: {
+    width: '90%',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
   modalLabel: { fontSize: 14, color: '#666', marginTop: 8 },
-  modalInput: { borderWidth: 1, borderColor: '#DDD', borderRadius: 8, padding: 8, marginTop: 4 },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 4,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 16,
+  },
   cancelButton: { paddingHorizontal: 12, paddingVertical: 8 },
   cancelText: { color: '#666', fontSize: 14 },
   saveButton: {
-    backgroundColor: '#5A40EA', paddingHorizontal: 16, paddingVertical: 8,
-    borderRadius: 6, marginLeft: 8,
+    backgroundColor: '#5A40EA',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginLeft: 8,
   },
   saveText: { color: '#FFF', fontSize: 14 },
+  /* —— Carrusel —— */
   carouselContainer: {
     marginTop: 16,
     width: '100%',
@@ -289,7 +408,7 @@ const s = StyleSheet.create({
     overflow: 'visible',
   },
   carouselCard: {
-    width: width - 40, // full‑width card with side padding
+    width: width - 40,
     height: 100,
     borderRadius: 12,
     justifyContent: 'center',
@@ -315,7 +434,6 @@ const s = StyleSheet.create({
   dotsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 0, // bajamos un poco los puntos
   },
   dot: {
     width: 8,

@@ -159,24 +159,20 @@ export default function MyJobs() {
         email: data.email,
         photoURL: data.photoURL || data.photoUrl || data.profileUrl || '',
         description: data.descriptionUser || data.description || '',
-        resumeURL: data.resumeURL || '',
+        resumeURL: data.resumeURL || data.cvURL || data.cv || '',
       } as Applicant;
     });
-    // ---- If an applicant record lacks photoURL, fetch it from the users collection ----
+    // ---- If any applicant lacks photoURL, fetch it from users ----
     const enriched = await Promise.all(
       apps.map(async a => {
         if (a.photoURL) return a;
         try {
-          // First try: document ID == userId
           let userSnap = await getDoc(doc(db, 'users', a.userId));
           if (!userSnap.exists()) {
-            // Second try: look for a document where field uid == userId
             const qsUser = await getDocs(
               query(collection(db, 'users'), where('uid', '==', a.userId))
             );
-            if (!qsUser.empty) {
-              userSnap = qsUser.docs[0];
-            }
+            if (!qsUser.empty) userSnap = qsUser.docs[0];
           }
           if (userSnap.exists()) {
             const u = userSnap.data() as any;
@@ -186,9 +182,7 @@ export default function MyJobs() {
               description: a.description || u.description || '',
             };
           }
-        } catch (_) {
-          /* ignore */
-        }
+        } catch (_) {}
         return a;
       })
     );
@@ -415,16 +409,24 @@ export default function MyJobs() {
                     {selectedApplicant.description && (
                       <Text style={s.detailText}>{selectedApplicant.description}</Text>
                     )}
+
+                    {/* ---- CV PDF ---- */}
                     {selectedApplicant.resumeURL ? (
-                      <Text
-                        style={[s.detailText, { color: '#1e88e5', textDecorationLine: 'underline' }]}
+                      <TouchableOpacity
+                        style={s.cvBox}
                         onPress={() => Linking.openURL(selectedApplicant.resumeURL!)}
                       >
-                        Ver hoja de vida
-                      </Text>
+                        <Ionicons
+                          name="document-attach-outline"
+                          size={28}
+                          color="#E23D3D"
+                        />
+                        <Text style={s.cvName}>Ver CV (PDF)</Text>
+                      </TouchableOpacity>
                     ) : (
-                      <Text style={s.detailText}>Sin hoja de vida</Text>
+                      <Text style={s.noCvText}>Sin hoja de vida</Text>
                     )}
+
                     <View style={s.divider} />
                     {schedulerActive ? (
                       <>
@@ -754,26 +756,6 @@ const s = StyleSheet.create({
     fontSize: 14,
     color: '#333',
   },
-  feedbackAbsolute: {
-    position: 'absolute',
-    top: getStatusBarHeight(true) + 60,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    borderRadius: 20,
-    marginHorizontal: 32,
-    paddingVertical: 10,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  feedbackText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   feedbackInModal: {
     position: 'absolute',
     top: getStatusBarHeight(true) + 60,
@@ -789,22 +771,36 @@ const s = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
   },
-  scheduleBox: {
-    width: '90%',
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 20,
-    alignItems: 'center',
+  feedbackText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
+  /* --- CV --- */
+  cvBox: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#F9F9F9',
+    borderRadius: 12,
+    padding: 12,
+    width: '100%',
+    elevation: 2,
+    marginBottom: 20,
+  },
+  cvName: {
+    marginLeft: 12,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#333',
+  },
+  noCvText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+    alignSelf: 'center',
   },
 });
 
-// badge dinámico
 const badgeStyle = (status: string): StyleProp<TextStyle> => ({
   paddingHorizontal: 8,
   paddingVertical: 4,
