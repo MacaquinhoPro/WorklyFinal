@@ -86,6 +86,7 @@ export default function Matches() {
   /* ---------- notificaciones ---------- */
   // ids de notificaciones ya programadas por app.id
   const notifIdsRef = useRef<Record<string, string>>({});
+  const deniedNotifRef = useRef<Record<string, boolean>>({});
 
   // Handler global (muestra alerta + sonido)
   Notifications.setNotificationHandler({
@@ -134,12 +135,9 @@ export default function Matches() {
           if (!jobSnap.exists()) return null;
           const job = jobSnap.data() as Job;
 
-          // asegurar que siempre tengamos título/descrición guardados
-          const title = data.title || job.title;
-          const description = data.description || job.description;
-          if (!data.title || !data.description) {
-            await updateDoc(d.ref, { title, description });
-          }
+          // Siempre usar título y descripción del trabajo
+          const title = job.title;
+          const description = job.description;
 
           return {
             id: d.id,
@@ -199,6 +197,19 @@ export default function Matches() {
         ) {
           await Notifications.cancelScheduledNotificationAsync(storedId);
           delete notifIdsRef.current[app.id];
+        }
+
+        // Notify on rejection
+        if (app.status === 'denied' && !deniedNotifRef.current[app.id]) {
+          const notifId = await Notifications.scheduleNotificationAsync({
+            content: {
+              title: 'Postulación Rechazada',
+              body: `Has sido rechazado al puesto "${app.title}"`,
+              sound: 'default',
+            },
+            trigger: null,
+          });
+          deniedNotifRef.current[app.id] = true;
         }
       }
     })();

@@ -22,6 +22,14 @@ import {
 import MapView, { Marker } from 'react-native-maps';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
 import { getStatusBarHeight } from 'react-native-iphone-x-helper';
 import { db, auth } from '../utils/firebaseconfig';
 import {
@@ -59,6 +67,7 @@ type Applicant = {
   description?: string;
   resumeURL?: string;
   experienceYears?: number | null;
+  pushToken?: string;
 };
 
 /* ─── componente principal ───────────────── */
@@ -111,6 +120,15 @@ export default function MyJobs() {
       }, 1500);
     });
   };
+
+  useEffect(() => {
+    (async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'No se pueden enviar notificaciones de rechazo.');
+      }
+    })();
+  }, []);
 
   /* --- cargar trabajos del hiring --- */
   useEffect(() => {
@@ -178,12 +196,13 @@ export default function MyJobs() {
               description: data.description || '',
               resumeURL: data.resumeURL || '',
               experienceYears: data.experienceYears ?? null,
+              pushToken: data.pushToken || '',
             } as Applicant;
           });
 
           const enriched = await Promise.all(
             base.map(async (a) => {
-              if (a.photoURL && a.resumeURL) return a;
+              if (a.photoURL && a.resumeURL && a.pushToken) return a;
               try {
                 let uSnap = await getDoc(doc(db, 'users', a.userId));
                 if (!uSnap.exists()) {
@@ -200,6 +219,7 @@ export default function MyJobs() {
                     description: a.description || u.description || '',
                     resumeURL:
                       a.resumeURL || u.cvURL || u.resumeURL || u.cv || '',
+                    pushToken: a.pushToken || u.pushToken || '',
                   };
                 }
               } catch (_) {}
@@ -245,6 +265,26 @@ export default function MyJobs() {
           : 'Postulante marcado para entrevista',
         status === 'rejected' ? '#e53935' : ['#5A40EA', '#EE805F']
       );
+      // send push notification to the rejected applicant
+      if (status === 'rejected' && app.pushToken) {
+        try {
+          await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              to: app.pushToken,
+              sound: 'default',
+              title: 'Rechazo de Postulación',
+              body: `Has sido rechazado al puesto de "${selectedJob?.title || ''}"`,
+            }),
+          });
+        } catch (err) {
+          console.error('Error enviando push:', err);
+        }
+      }
       setSelectedApplicant(null);
     } catch (e: any) {
       Alert.alert('Error', e.message);
@@ -692,6 +732,7 @@ const s = StyleSheet.create({
   /* --- Tarjeta (igual a Matches) --- */
   cardWrapper: {
     marginVertical: 8,
+    marginHorizontal: 16,
     borderRadius: 12,
     overflow: 'hidden',
     elevation: 3,
