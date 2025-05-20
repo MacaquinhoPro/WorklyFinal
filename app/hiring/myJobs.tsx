@@ -227,7 +227,8 @@ export default function MyJobs() {
             })
           );
 
-          setApplicants(enriched);
+          // Remover postulantes rechazados de la lista
+          setApplicants(enriched.filter(a => a.status !== 'rejected'));
         } catch (err) {
           console.error(err);
           Alert.alert('Error', 'No se pudieron cargar postulantes.');
@@ -629,37 +630,54 @@ export default function MyJobs() {
 
           {/* DateTimePicker inline */}
           {picker.visible && (
-            <DateTimePicker
-              value={new Date()}
-              mode={picker.mode}
-              display={
-                Platform.OS === 'ios'
-                  ? picker.mode === 'date'
-                    ? 'inline'
-                    : 'spinner'
-                  : 'default'
-              }
-              style={
-                Platform.OS === 'ios'
-                  ? { width: '60%', height: 100, transform: [{ scale: 0.8 }], alignSelf: 'center' }
-                  : { width: '60%', transform: [{ scale: 0.9 }], alignSelf: 'center' }
-              }
-              onChange={(_, sel) => {
-                if (!sel) {
-                  setPicker({ ...picker, visible: false });
-                  return;
-                }
-                if (picker.mode === 'date') {
-                  setScheduleModal((p) => ({ ...p, date: sel.toISOString().split('T')[0] }));
-                  setPicker({ visible: false, mode: 'time' });
-                } else {
-                  const hh = String(sel.getHours()).padStart(2, '0');
-                  const mm = String(sel.getMinutes()).padStart(2, '0');
-                  setScheduleModal((p) => ({ ...p, time: `${hh}:${mm}` }));
-                  setPicker({ visible: false, mode: 'date' });
-                }
+            <View
+              style={{
+                backgroundColor: '#f7f7f7',       // lighter grey background
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: '#ddd',              // subtle border
+                padding: 8,
+                alignSelf: 'center',
+                ...Platform.select({
+                  ios: { width: '80%' },
+                  android: { width: '60%' },
+                }),
               }}
-            />
+            >
+              <DateTimePicker
+                value={new Date()}
+                mode={picker.mode}
+                display={
+                  Platform.OS === 'ios'
+                    ? picker.mode === 'date'
+                      ? 'inline'
+                      : 'spinner'
+                    : 'default'
+                }
+                textColor={Platform.OS === 'ios' ? '#000000' : undefined}
+                style={{
+                  width: '100%',
+                  height: Platform.OS === 'ios' ? 200 : undefined,
+                  transform: Platform.OS === 'ios' ? [{ scale: 0.8 }] : undefined,
+                }}
+                onChange={(_, sel) => {
+                  if (!sel) {
+                    setPicker({ ...picker, visible: false });
+                    return;
+                  }
+                  if (picker.mode === 'date') {
+                    setScheduleModal((p) => ({ ...p, date: sel.toISOString().split('T')[0] }));
+                    setPicker({ visible: false, mode: 'time' });
+                  } else {
+                    const hh = String(sel.getHours()).padStart(2, '0');
+                    const mm = String(sel.getMinutes()).padStart(2, '0');
+                    setScheduleModal((p) => ({ ...p, time: `${hh}:${mm}` }));
+                    setPicker({ visible: false, mode: 'date' });
+                  }
+                }}
+                themeVariant="light"              // ensure light theme on iOS
+              />
+            </View>
           )}
         </SafeAreaView>
       </Modal>
