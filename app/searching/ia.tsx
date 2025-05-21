@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: '#DDD',
     backgroundColor: '#FFF',
-    marginBottom: -34,
+    marginBottom: 0,
   },
   input: {
     flex: 1,
