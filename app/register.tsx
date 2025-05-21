@@ -71,25 +71,20 @@ export default function RegisterScreen() {
       if (!emailRegex.test(email.trim()))
         return setError('El correo electrónico no es válido.');
       setStep(step + 1);
-
     } else if (step === 1) {
       if (!password) return setError('Ingresa tu contraseña.');
       if (password.length < 6)
         return setError('La contraseña debe tener al menos 6 caracteres.');
       setStep(step + 1);
-
     } else if (step === 2) {
       if (!firstName.trim()) return setError('Ingresa tu nombre.');
       setStep(step + 1);
-
     } else if (step === 3) {
       if (!education.trim()) return setError('Ingresa tu formación.');
       setStep(step + 1);
-
     } else if (step === 4) {
       // no hay validación obligatoria de foto
       setStep(step + 1);
-
     } else if (step === 5) {
       if (!selectedRole) return setError('Selecciona un rol.');
       try {
@@ -139,14 +134,30 @@ export default function RegisterScreen() {
 
   /* ---------- seleccionar foto ---------- */
   const pickPhoto = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted')
-      return Alert.alert('Permiso denegado', 'No se otorgó acceso a la galería.');
+    const lib = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const cam = await ImagePicker.requestCameraPermissionsAsync();
+    if (lib.status !== 'granted' || cam.status !== 'granted') {
+      Alert.alert('Permiso denegado', 'Se requieren permisos para cámara y galería.');
+      return;
+    }
+    Alert.alert('Seleccionar imagen', '¿De dónde obtener la foto?', [
+      { text: 'Cámara', onPress: () => pick('camera') },
+      { text: 'Galería', onPress: () => pick('gallery') },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  };
 
-    const res = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
-      quality: 0.7,
-    });
+  const pick = async (source: 'camera' | 'gallery') => {
+    const res =
+      source === 'camera'
+        ? await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            quality: 0.8,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            allowsEditing: true,
+            quality: 0.8,
+          });
     if (!res.canceled && res.assets?.length) setPhotoUri(res.assets[0].uri);
   };
 

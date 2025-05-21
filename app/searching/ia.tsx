@@ -12,11 +12,11 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import Markdown from 'react-native-markdown-display';   // ← NUEVO
+import Markdown from 'react-native-markdown-display';
 
 /* ---------- tipos ---------- */
 type Message = {
-  text: string;                          // admite Markdown
+  text: string;
   sender_by: 'User' | 'Bot';
   date: Date;
   state: 'sent' | 'recived';
@@ -94,13 +94,16 @@ export default function IAChatScreen() {
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
+        keyboardVerticalOffset={
+          Platform.OS === 'ios' ? insets.bottom + 20 : 0
+        }
       >
         <FlatList
           ref={flatListRef}
           data={messages}
           keyExtractor={(_, i) => i.toString()}
           contentContainerStyle={[styles.chatContainer, { paddingTop: 8 }]}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => {
             const bubbleContent = (
               <Markdown
@@ -141,7 +144,12 @@ export default function IAChatScreen() {
         )}
 
         {/* -------- barra de entrada -------- */}
-        <View style={styles.inputRow}>
+        <View
+          style={[
+            styles.inputRow,
+            { paddingBottom: Platform.OS === 'ios' ? insets.bottom : 0 },
+          ]}
+        >
           <TextInput
             style={styles.input}
             value={input}
@@ -171,38 +179,24 @@ export default function IAChatScreen() {
 
 /* ---------- estilos ---------- */
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
-  container: {
-    flex: 1,
-  },
-  chatContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
+  safeArea: { flex: 1, backgroundColor: '#F5F5F5' },
+  container: { flex: 1 },
+  chatContainer: { paddingHorizontal: 16, paddingBottom: 8 },
   bubble: {
     maxWidth: '80%',
     padding: 10,
     borderRadius: 12,
     marginVertical: 4,
   },
-  userBubble: {
-    alignSelf: 'flex-end',
-  },
-  aiBubble: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#E0E0E0',
-  },
+  userBubble: { alignSelf: 'flex-end' },
+  aiBubble: { alignSelf: 'flex-start', backgroundColor: '#E0E0E0' },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8,
+    paddingHorizontal: 8,
     borderTopWidth: 1,
     borderColor: '#DDD',
     backgroundColor: '#FFF',
-    marginBottom: 0,
   },
   input: {
     flex: 1,
@@ -220,9 +214,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  sendBtnDisabled: {
-    opacity: 0.6,
-  },
+  sendBtnDisabled: { opacity: 0.6 },
   welcomeOverlay: {
     position: 'absolute',
     top: 0,

@@ -16,6 +16,7 @@ import {
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import { LineChart } from 'react-native-chart-kit';
 import { auth, db, storage } from '../utils/firebaseconfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -117,6 +118,30 @@ export default function CompanyProfile() {
     }
   };
 
+  // ── datos simulados del gráfico ─────────────────────────────
+  const statsData = {
+    labels: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun'],
+    datasets: [
+      {
+        data: [2, 4, 3, 5, 6, 8],
+        strokeWidth: 2,
+      },
+    ],
+  };
+
+  const chartConfig = {
+    backgroundGradientFrom: '#FFF',
+    backgroundGradientTo: '#FFF',
+    decimalPlaces: 0,
+    color: (opacity = 1) => `rgba(90, 64, 234, ${opacity})`,
+    labelColor: (opacity = 1) => `rgba(102, 102, 102, ${opacity})`,
+    propsForDots: {
+      r: '4',
+      strokeWidth: '2',
+      stroke: '#EE805F',
+    },
+  };
+
   return (
     <SafeAreaView style={s.safe}>
       {/* ── modal edición ─────────────── */}
@@ -192,20 +217,19 @@ export default function CompanyProfile() {
           </View>
         </View>
 
-        {/* tarjeta premium opcional */}
-        <View style={s.platinumCard}>
-          <LinearGradient colors={['#FFF', '#F7F7F7']} style={s.platinumBg} />
-          <Feather name="briefcase" size={24} color="#000" />
-          <Text style={s.platinumTitle}>Workly Platinum</Text>
-          <Text style={s.platinumSubtitle}>Level up every action you take on Workly</Text>
-          <View style={s.pagination}>
-            {[1, 2, 3, 4, 5].map((i) => (
-              <View key={i} style={[s.dot, i === 1 && s.dotActive]} />
-            ))}
-          </View>
-          <TouchableOpacity style={s.learnMoreBtn}>
-            <Text style={s.learnMoreText}>LEARN MORE</Text>
-          </TouchableOpacity>
+        {/* ── gráfico de desempeño ─────────────────────────────── */}
+        <View style={{ marginTop: 10 }}>
+          <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 6, color: '#333' }}>
+            Desempeño como contratante
+          </Text>
+          <LineChart
+            data={statsData}
+            width={width - 40}
+            height={220}
+            chartConfig={chartConfig}
+            bezier
+            style={{ borderRadius: 12 }}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
