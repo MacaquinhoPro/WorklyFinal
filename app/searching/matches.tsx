@@ -25,7 +25,6 @@ import {
   onSnapshot,
   doc,
   getDoc,
-  updateDoc,
   deleteDoc,
 } from 'firebase/firestore';
 import * as Notifications from 'expo-notifications';
@@ -43,7 +42,7 @@ type App = {
   imageUrl: string;
   latitude?: number;
   longitude?: number;
-  interviewAt?: number | null;      // ← fecha/hora de entrevista (epoch ms)
+  interviewAt?: number | null; // epoch ms
 };
 
 type Job = {
@@ -57,54 +56,37 @@ type Job = {
   longitude?: number;
 };
 
-/* ---------- utilidades ---------- */
-const fmt = (ts?: number) =>
-  ts
-    ? new Date(ts).toLocaleString(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      })
-    : '';
-
-const translateStatus = (s: string) => {
-  switch (s) {
-    case 'pending':
-      return 'Pendiente';
-    case 'accepted':
-      return 'Aceptada';
-    case 'denied':
-      return 'Rechazada';
-    case 'interview':
-      return 'Entrevista';
-    default:
-      return s;
-  }
-};
+/* -- Mueve esto fuera del componente para que se registre de una vez -- */
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 /* ============================================================ */
 export default function Matches() {
-  /* ---------- notificaciones ---------- */
-  // ids de notificaciones ya programadas por app.id
-  const notifIdsRef = useRef<Record<string, string>>({});
-  const deniedNotifRef = useRef<Record<string, boolean>>({});
+  /* ---------- para mostrar Alert en foreground ---------- */
+  useEffect(() => {
+    const sub = Notifications.addNotificationReceivedListener(notification => {
+      const { title, body } = notification.request.content;
+      if (title || body) {
+        Alert.alert(title ?? '', body ?? '');
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
-  // Handler global (muestra alerta + sonido)
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-
-  // Crear canal para Android una sola vez
+  /* ---------- crea canal de Android y pide permisos ---------- */
   useEffect(() => {
     (async () => {
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('interviews', {
           name: 'Entrevistas',
-          importance: Notifications.AndroidImportance.DEFAULT,
+          importance: Notifications.AndroidImportance.MAX,
           sound: 'default',
+          vibrationPattern: [0, 120, 120, 120],
         });
       }
       const { status } = await Notifications.requestPermissionsAsync();
@@ -125,26 +107,19 @@ export default function Matches() {
       collection(db, 'applications'),
       where('userId', '==', auth.currentUser!.uid)
     );
-    const unsub = onSnapshot(q, async (snap) => {
+    const unsub = onSnapshot(q, async snap => {
       const enriched = await Promise.all(
-        snap.docs.map(async (d) => {
+        snap.docs.map(async d => {
           const data = d.data() as App;
-
-          // consultar datos del trabajo
           const jobSnap = await getDoc(doc(db, 'jobs', data.jobId));
           if (!jobSnap.exists()) return null;
           const job = jobSnap.data() as Job;
-
-          // Siempre usar título y descripción del trabajo
-          const title = job.title;
-          const description = job.description;
-
           return {
             id: d.id,
             jobId: data.jobId,
             status: data.status,
-            title,
-            description,
+            title: job.title,
+            description: job.description,
             pay: job.pay,
             duration: job.duration,
             requirements: job.requirements,
@@ -155,7 +130,6 @@ export default function Matches() {
           } as App;
         })
       );
-
       setApps(enriched.filter((a): a is App => !!a));
       setLoading(false);
     });
@@ -163,51 +137,43 @@ export default function Matches() {
   }, []);
 
   /* ---------- programa / cancela notificaciones ---------- */
+  const notifIdsRef = useRef<Record<string, string>>({});
+  const deniedNotifRef = useRef<Record<string, boolean>>({});
+
   useEffect(() => {
     (async () => {
       for (const app of apps) {
         const storedId = notifIdsRef.current[app.id];
 
-        // 1) Si hay entrevista futura y no está programada → programar
-        if (
-          app.interviewAt &&
-          app.interviewAt > Date.now() &&
-          !storedId
-        ) {
+        /* ---- Entrevistas futuras ---- */
+        if (app.interviewAt && app.interviewAt > Date.now() && !storedId) {
           const notifId = await Notifications.scheduleNotificationAsync({
             content: {
               title: 'Entrevista programada',
-              body: `Entrevista para "${app.title}" a las ${fmt(
+              body: `Entrevista para "${app.title}" el ${new Date(
                 app.interviewAt
-              )}`,
+              ).toLocaleString()}`,
               sound: 'default',
-            },
-            trigger: {
               channelId: 'interviews',
-              date: new Date(app.interviewAt),
-            } as any,
+            },
+            trigger: { date: new Date(app.interviewAt) } as any,
           });
           notifIdsRef.current[app.id] = notifId;
         }
 
-        // 2) Si ya no hay entrevista o está en pasado → cancelar y limpiar
-        if (
-          (!app.interviewAt || app.interviewAt <= Date.now()) &&
-          storedId
-        ) {
+        /* ---- Cancelar notifs caducadas ---- */
+        if ((!app.interviewAt || app.interviewAt <= Date.now()) && storedId) {
           await Notifications.cancelScheduledNotificationAsync(storedId);
           delete notifIdsRef.current[app.id];
         }
 
-        // Notify on rejection
+        /* ---- Rechazo inmediato ---- */
         if (app.status === 'denied' && !deniedNotifRef.current[app.id]) {
-          const notifId = await Notifications.scheduleNotificationAsync({
-            content: {
-              title: 'Postulación Rechazada',
-              body: `Has sido rechazado al puesto "${app.title}"`,
-              sound: 'default',
-            },
-            trigger: null,
+          await Notifications.presentNotificationAsync({
+            title: 'Postulación Rechazada',
+            body: `Has sido rechazado para "${app.title}"`,
+            sound: 'default',
+            channelId: 'interviews',
           });
           deniedNotifRef.current[app.id] = true;
         }
@@ -227,12 +193,9 @@ export default function Matches() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // cancelar notificación pendiente (si la hay)
               const storedId = notifIdsRef.current[app.id];
               if (storedId) {
-                await Notifications.cancelScheduledNotificationAsync(
-                  storedId
-                );
+                await Notifications.cancelScheduledNotificationAsync(storedId);
                 delete notifIdsRef.current[app.id];
               }
               await deleteDoc(doc(db, 'applications', app.id));
@@ -244,6 +207,30 @@ export default function Matches() {
         },
       ]
     );
+  };
+
+  /* ---------- utilidades ---------- */
+  const fmt = (ts?: number) =>
+    ts
+      ? new Date(ts).toLocaleString(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })
+      : '';
+
+  const translateStatus = (s: string) => {
+    switch (s) {
+      case 'pending':
+        return 'Pendiente';
+      case 'accepted':
+        return 'Aceptada';
+      case 'denied':
+        return 'Rechazada';
+      case 'interview':
+        return 'Entrevista';
+      default:
+        return s;
+    }
   };
 
   /* ---------- render tarjeta ---------- */
@@ -261,8 +248,6 @@ export default function Matches() {
         <View style={s.cardOverlay}>
           <View style={s.cardHeader}>
             <Text style={s.status}>{translateStatus(item.status)}</Text>
-
-            {/* Botón cancelar */}
             <TouchableOpacity
               onPress={() => handleCancel(item)}
               style={s.cancelBtn}
@@ -271,7 +256,6 @@ export default function Matches() {
               <Text style={s.cancelTxt}>Cancelar</Text>
             </TouchableOpacity>
           </View>
-
           <Text style={s.title}>{item.title}</Text>
           <Text style={s.desc} numberOfLines={2}>
             {item.description}
@@ -287,7 +271,6 @@ export default function Matches() {
     </TouchableOpacity>
   );
 
-  /* ---------- render principal ---------- */
   if (loading) {
     return (
       <View style={s.loading}>
@@ -305,13 +288,12 @@ export default function Matches() {
       ) : (
         <FlatList
           data={apps}
-          keyExtractor={(a) => a.id}
+          keyExtractor={a => a.id}
           renderItem={renderApp}
           contentContainerStyle={{ paddingBottom: 16 }}
         />
       )}
 
-      {/* ---------- Modal Detalle ---------- */}
       {selected && (
         <Modal transparent animationType="slide" visible>
           <View style={s.modalOverlay}>
@@ -399,7 +381,6 @@ const s = StyleSheet.create({
     fontSize: 18,
     color: '#444',
   },
-  /* --- Tarjeta --- */
   cardWrapper: {
     marginVertical: 8,
     borderRadius: 12,
@@ -459,7 +440,6 @@ const s = StyleSheet.create({
     fontSize: 14,
     marginTop: 4,
   },
-  /* --- Modal --- */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
